@@ -1,0 +1,30 @@
+{
+  "name": "@board/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fonts": "node scripts/copy-fonts.mjs",
+    "predev": "npm run fonts",
+    "prebuild": "npm run fonts",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@board/shared": "^0.1.0",
+    "@excalidraw/excalidraw": "^0.18.1",
+    "lucide-react": "^1.52.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^29.1.1",
+    "vite": "^8.3.3"
+  }
+}

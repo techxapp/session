@@ -1,0 +1,426 @@
+:root {
+  --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-solid: #ffffff;
+  --surface-muted: #f4f5f7;
+  --border: rgba(16, 24, 40, 0.1);
+  --border-strong: rgba(16, 24, 40, 0.18);
+  --text: #1b1f27;
+  --text-muted: #667085;
+  --text-faint: #98a2b3;
+  --accent: #5b5bd6;
+  --accent-hover: #4b4bc4;
+  --accent-soft: rgba(91, 91, 214, 0.12);
+  --ok: #12b76a;
+  --warn: #f79009;
+  --bad: #f04438;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 12px 32px -8px rgba(16, 24, 40, 0.18);
+  --radius: 14px;
+}
+
+.app[data-theme="dark"] {
+  --surface: rgba(35, 36, 41, 0.92);
+  --surface-solid: #232429;
+  --surface-muted: #2c2d33;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #ececf1;
+  --text-muted: #a0a3ad;
+  --text-faint: #6e717c;
+  --accent: #8b8bf5;
+  --accent-hover: #a0a0ff;
+  --accent-soft: rgba(139, 139, 245, 0.16);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px -8px rgba(0, 0, 0, 0.55);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  position: fixed;
+  inset: 0;
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+
+/* Match Excalidraw's accent to ours. */
+.app .excalidraw {
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent-hover);
+  --color-primary-darkest: var(--accent-hover);
+}
+
+kbd {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+/* ---------- status pill (top right) ---------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  font: 500 12.5px/1 var(--font-ui);
+  color: var(--text-muted);
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.pill-ok .pill-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.pill-warn .pill-dot {
+  background: var(--warn);
+}
+.pill-warn {
+  color: var(--warn);
+}
+.pill-bad .pill-dot {
+  background: var(--bad);
+}
+.pill-bad {
+  color: var(--bad);
+}
+
+/* ---------- empty state ---------- */
+.empty-state {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 32px));
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+}
+.empty-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 22px;
+}
+.empty-state h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.empty-state p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+/* ---------- command dock ---------- */
+.dock {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  width: min(680px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 5;
+  pointer-events: none;
+}
+.dock > * {
+  pointer-events: auto;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 8px 0 18px;
+  border-radius: 16px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.bar:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow:
+    var(--shadow),
+    0 0 0 4px var(--accent-soft);
+}
+.bar-icon {
+  color: var(--accent);
+  flex: none;
+}
+.bar.is-running .bar-icon {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.bar input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 450 15px/1 var(--font-ui);
+}
+.bar input::placeholder {
+  color: var(--text-faint);
+}
+.bar .hint {
+  flex: none;
+}
+.send {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    opacity 0.15s,
+    transform 0.05s;
+}
+.send:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.send:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.send.stop {
+  background: var(--text);
+  color: var(--surface-solid);
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.chip {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: 500 12.5px/1.2 var(--font-ui);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+.chip:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent-soft);
+}
+
+/* ---------- activity feed ---------- */
+.activity {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.row {
+  display: flex;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  opacity: 0.6;
+  animation: rise 0.18s ease-out;
+}
+.row.latest {
+  opacity: 1;
+}
+.row-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+.status-running .row-icon {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.status-done .row-icon {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+}
+.status-error .row-icon {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+}
+.row-body {
+  flex: 1;
+  min-width: 0;
+}
+.row-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+}
+.row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.row-meta {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.row-undo {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 500 12px/1 var(--font-ui);
+  cursor: pointer;
+}
+.row-undo:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.note svg {
+  flex: none;
+}
+.note-warn {
+  color: var(--warn);
+}
+.note-error {
+  color: var(--bad);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Excalidraw puts its own toolbar along the bottom on phones; sit above it. */
+@media (max-width: 730px) {
+  /* Excalidraw's toolbar takes the top row on phones: collapse the pill to its status dot. */
+  .pill {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+  .pill-label,
+  .row-meta {
+    display: none;
+  }
+  .dock {
+    bottom: 76px;
+  }
+  .bar .hint,
+  .suggestions {
+    display: none;
+  }
+  .empty-state {
+    top: 30%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .bar.is-running .bar-icon,
+  .row {
+    animation: none;
+  }
+}
