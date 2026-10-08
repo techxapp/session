@@ -27,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fastpath.decide import build_questions, parse_answers, resolve_target, route_why, words  # noqa: E402
+from fastpath.decide import build_questions, draws_object, parse_answers, resolve_target, route_why, words  # noqa: E402
 
 # Laya's head holds about this many target options; with more elements the target is left to the code rules.
 MAX_TARGET_OPTIONS = 10
@@ -116,6 +116,9 @@ class FastPath:
         if rule:
             ans["target"] = (rule[0], 1.0)
         decision, actions, why = route_why(ans, self.threshold)
+        obj = draws_object(text, decision, actions)
+        if obj:
+            decision, actions, why = "llm", None, f"drawing a {obj} needs the LLM"
         return {
             "route": decision,
             "actions": unalias(actions, back) if actions else None,

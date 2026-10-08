@@ -53,6 +53,7 @@ describe("tool definitions", () => {
   it("are generated for every action, as object schemas, with the prefix cached", () => {
     expect(TOOLS.map((t) => t.name)).toEqual([
       "add_shape",
+      "add_object",
       "add_text",
       "add_arrow",
       "move_element",
@@ -76,6 +77,10 @@ describe("blockToEvents", () => {
   it("validates tool calls into actions", () => {
     const [ev] = blockToEvents(toolUse("add_shape", { id: "db", kind: "rectangle", label: "DB" }), Date.now());
     expect(ev).toMatchObject({ type: "action", action: { name: "add_shape", input: { id: "db", kind: "rectangle", label: "DB" } } });
+  });
+  it("accepts catalog objects and rejects ones not in it", () => {
+    expect(blockToEvents(toolUse("add_object", { id: "tree", object: "tree", size: "large" }), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("add_object", { object: "spaceship-shaped-cake" }), 0)[0].type).toBe("invalid");
   });
   it("rejects malformed or unknown calls instead of forwarding them", () => {
     expect(blockToEvents(toolUse("add_shape", { kind: "hexagon" }), 0)[0].type).toBe("invalid");

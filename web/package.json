@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "fonts": "node scripts/copy-fonts.mjs",
+    "objects": "node scripts/fetch-objects.mjs",
     "predev": "npm run fonts",
     "prebuild": "npm run fonts",
     "dev": "vite",

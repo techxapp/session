@@ -1,4 +1,5 @@
 import { z } from "zod";
+import objects from "../objects.json";
 
 /**
  * Board actions are the typed "System 1" decisions: every voice/text command
@@ -49,6 +50,17 @@ export const AddShape = z.object({
   placement: Placement.optional(),
 });
 
+/** Clip-art the board can draw (shared/objects.json; images in web/public/objects, made by web/scripts/fetch-objects.mjs). */
+export type ObjectName = keyof typeof objects;
+export const OBJECT_NAMES = Object.keys(objects) as [ObjectName, ...ObjectName[]];
+
+export const AddObject = z.object({
+  id: NewId.optional(),
+  object: z.enum(OBJECT_NAMES).describe("Which picture. Pick the closest one, e.g. 'kid' -> 'child', 'oak' -> 'tree'."),
+  size: z.enum(["small", "medium", "large"]).optional(),
+  placement: Placement.optional(),
+});
+
 export const AddText = z.object({
   id: NewId.optional(),
   text: z.string().min(1).max(1000),
@@ -94,6 +106,7 @@ export const ClearBoard = z.object({
 
 export const ACTION_SCHEMAS = {
   add_shape: AddShape,
+  add_object: AddObject,
   add_text: AddText,
   add_arrow: AddArrow,
   move_element: MoveElement,
@@ -108,6 +121,8 @@ export const ACTION_NAMES = Object.keys(ACTION_SCHEMAS) as ActionName[];
 
 export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
   add_shape: "Draw a shape (box, circle, diamond, sticky note), optionally with a label inside.",
+  add_object:
+    "Draw a picture of a real-world thing: a person, animal, plant, weather, food, building, vehicle or everyday object. Not for diagram boxes.",
   add_text: "Write free-standing text on the board (titles, notes, bullet lists).",
   add_arrow: "Connect two elements with an arrow, optionally labelled.",
   move_element: "Move an existing element: nudge it in a direction or place it next to something / in a region.",

@@ -4,6 +4,7 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { BoardAction, CommandEvent } from "@board/shared";
 import { checkHealth } from "./api";
+import { loadObjectFiles } from "./board/objects";
 import { useCommandRunner } from "./board/useCommandRunner";
 import { ActivityPanel } from "./components/ActivityPanel";
 import { CommandDock } from "./components/CommandDock";
@@ -85,6 +86,11 @@ export default function App() {
       }
     }, 400);
   }, []);
+
+  // Saved boards keep only element JSON; fetch the clip-art their object images point at.
+  useEffect(() => {
+    if (api) void loadObjectFiles(api);
+  }, [api]);
 
   // Dev-only hook for driving the board without the model (used by tests and demos).
   useEffect(() => {

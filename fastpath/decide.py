@@ -8,7 +8,9 @@ command names it (`resolve_target`), routes the command (`route`: ignore / fast 
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 # Mirrors shared/src/actions.ts.
 COLORS = ["black", "gray", "red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"]
@@ -164,6 +166,25 @@ SET_ACTIONS = {"delete_elements", "update_element", "move_element"}
 
 def words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
+
+
+# Clip-art the LLM can draw with add_object (shared/objects.json): every name and alias -> object name.
+_CATALOG = json.loads((Path(__file__).resolve().parent.parent / "shared" / "objects.json").read_text(encoding="utf-8"))
+# Longest first, so "pine tree" wins over "tree".
+OBJECT_WORDS = dict(sorted(((w, n) for n, o in _CATALOG.items() for w in (n, *o["aliases"])), key=lambda p: -len(p[0])))
+EDIT_ACTIONS = SET_ACTIONS | {"undo_last_command", "clear_board"}
+
+
+def draws_object(text: str, decision: str, actions: list[dict] | None) -> str | None:
+    """The object a command may want drawn ("let's grab a tree"), unless it was routed fast as an edit.
+
+    The decision model has no add_object answer, so it reads such commands as add_shape, add_text or chatter;
+    they go to the LLM instead. Fast edits of an existing object ("make the tree bigger") stay fast.
+    """
+    if decision == "fast" and actions and all(a["name"] in EDIT_ACTIONS for a in actions):
+        return None
+    padded = f" {' '.join(words(text))} "
+    return next((name for w, name in OBJECT_WORDS.items() if f" {w} " in padded or f" {w}s " in padded), None)
 
 
 def resolve_set(said: list[str], elements: list[dict]) -> list[str] | str | None:
