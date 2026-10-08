@@ -5,6 +5,7 @@ import type { AppState, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/t
 import type { BoardAction, CommandEvent } from "@board/shared";
 import { checkHealth } from "./api";
 import { useCommandRunner } from "./board/useCommandRunner";
+import { ActivityPanel } from "./components/ActivityPanel";
 import { CommandDock } from "./components/CommandDock";
 import { StatusPill, type ServerStatus } from "./components/StatusPill";
 
@@ -132,14 +133,14 @@ export default function App() {
         </div>
       )}
 
+      <ActivityPanel log={runner.log} running={runner.running} onUndo={runner.undo} />
+
       <CommandDock
-        log={runner.log}
+        showSuggestions={boardEmpty && runner.log.length === 0}
         running={runner.running}
         disabled={status.state === "offline"}
-        boardEmpty={boardEmpty}
         onSubmit={(t) => void runner.run(t)}
         onCancel={runner.cancel}
-        onUndo={runner.undo}
       />
     </div>
   );

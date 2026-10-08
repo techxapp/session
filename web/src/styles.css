@@ -266,16 +266,82 @@ kbd {
   background: var(--accent-soft);
 }
 
-/* ---------- activity feed ---------- */
-.activity {
-  list-style: none;
-  margin: 0;
-  padding: 6px;
+/* ---------- activity panel (right edge, collapsible) ---------- */
+.activity-panel {
+  position: absolute;
+  top: 72px;
+  right: 16px;
+  bottom: 80px;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
   border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   backdrop-filter: blur(12px);
+  z-index: 4;
+  overflow: hidden;
+  animation: slide-in 0.18s ease-out;
+}
+.activity-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font: 600 12.5px/1 var(--font-ui);
+}
+.activity-head span {
+  flex: 1;
+}
+.activity-close,
+.activity-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.activity-close {
+  width: 28px;
+  height: 28px;
+}
+.activity-close:hover,
+.activity-tab:hover {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+.activity-tab {
+  position: absolute;
+  top: 72px;
+  right: 16px;
+  height: 36px;
+  padding: 0 12px;
+  border-color: var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  backdrop-filter: blur(8px);
+  font: 600 12.5px/1 var(--font-ui);
+  z-index: 4;
+}
+.activity-count {
+  font-variant-numeric: tabular-nums;
+}
+.activity {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -331,6 +397,16 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+}
+/* The panel is narrow: give the command text its own line, badge and meta below. */
+.activity-panel .row-line {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.activity-panel .row-text {
+  flex-basis: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .row-meta {
   flex: none;
@@ -409,6 +485,12 @@ kbd {
     opacity: 0.35;
   }
 }
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
 @keyframes rise {
   from {
     opacity: 0;
@@ -438,11 +520,17 @@ kbd {
   .empty-state {
     top: 30%;
   }
+  .activity-panel {
+    left: 16px;
+    width: auto;
+    bottom: 150px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .spin,
   .bar.is-running .bar-icon,
+  .activity-panel,
   .row {
     animation: none;
   }

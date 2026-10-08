@@ -60,7 +60,7 @@ web: streamCommand parses SSE -> consume() -> executor.applyAction -> api.update
 ```
 
 - The **zod schemas in `shared/src/actions.ts` are the single source of truth**: they generate the model tool definitions (`z.toJSONSchema(..., { io: "input" })`) and validate every incoming tool call. Never hand-write tool JSON; change the schema.
-- **SSE events** (`shared/src/protocol.ts` `CommandEvent`): `route {source: local|cloud, model, detail, ms}` (always first: who decided and why; shown as the Local/Cloud badge in the activity feed), `action {action, ms}`, `say {text}`, `invalid {name, error}`, `error {message}`, `done {ms, model, actions}`.
+- **SSE events** (`shared/src/protocol.ts` `CommandEvent`): `route {source: local|cloud, model, detail, ms}` (always first: who decided and why; shown as the Local/Cloud badge in the activity panel), `action {action, ms}`, `say {text}`, `invalid {name, error}`, `error {message}`, `done {ms, model, actions}`.
 - **Barge-in**: a new command aborts the in-flight fetch; the server aborts the model call on `res` close. Cancelled runs are marked `cancelled`.
 - **Scene summary** (`web/src/board/summary.ts` -> `server/src/prompt.ts#formatScene`): compact text of ids, labels, positions, colour, selection, `recentIds` (newest first) so "it"/"that"/"the database" resolve. Capped at 500 elements / 100 selected / 50 recent by the server's body schema.
 - **Prompt caching**: `SYSTEM_PROMPT` must stay byte-stable across requests (Anthropic path caches system + tools; the last tool carries `cache_control`). Don't interpolate per-request data into it; per-request data goes in `buildUserMessage`.
@@ -87,7 +87,7 @@ web/src/board/geometry.ts Placement math: besides, regionPoint, findFreeSpot, co
 web/src/board/style.ts    PALETTE (named colours), sizes, NUDGE, fitLabel, FONT (Nunito), ROUGHNESS 0
 web/src/board/summary.ts  summarize() scene -> SceneSummary, visibleArea()
 web/src/board/useCommandRunner.ts  Streams events, applies actions, undo history, log, revealIfHidden zoom/scroll
-web/src/components/       CommandDock (input, activity feed, suggestions, `/` hotkey), StatusPill
+web/src/components/       CommandDock (input, suggestions, `/` hotkey), ActivityPanel (collapsible right-side log, newest first; open state in localStorage `voice-board:activity-open`), StatusPill
 web/src/board/executor.test.ts  Executor tests; web/src/test-setup.ts stubs canvas/FontFace for jsdom
 web/scripts/copy-fonts.mjs  Copies Excalidraw fonts to web/public/fonts (gitignored) on predev/prebuild
 fastpath/decide.py        Decision logic shared by sidecar and eval: questions, target/group rules, route/route_why, compose
@@ -156,5 +156,5 @@ eval/                     Python harness (not part of the app) testing self-host
 
 - `server/src/server.test.ts`: fake Anthropic `messages.stream` and fake OpenAI async-iterable stream; drives `app.inject` and parses the SSE body. Fast-path tests use fake `FastPath` functions plus a throwaway Fastify app as the HTTP sidecar. The Python sidecar has no automated tests; `eval/laya_eval.py` exercises its decision code.
 - `web/src/board/executor.test.ts`: runs action sequences through `applyAction` and asserts on resulting Excalidraw elements.
-- No tests yet for `useCommandRunner`, `App`, `CommandDock`, `api.ts` or `geometry.ts` directly.
+- No tests yet for `useCommandRunner`, `App`, `CommandDock`, `ActivityPanel`, `api.ts` or `geometry.ts` directly.
 - After changes run `npm run typecheck && npm test`.

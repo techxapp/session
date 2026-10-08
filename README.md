@@ -45,7 +45,7 @@ Simple commands ("make the API red", "move it left", "delete all the notes", "un
 - **ignore**: chatter ("can everyone see my screen") is dropped.
 - **llm**: anything else (new text, several changes, low confidence) goes to the cloud model, as does every command when the sidecar is down or slower than `FASTPATH_TIMEOUT_MS`.
 
-Each command in the activity feed shows a **Local** or **Cloud** badge, with the reason (for example "Sent to the cloud (local model passed: needs new text)"). The status pill reads "System 1 · Haiku 4.5 + Laya" when the fast path is on.
+Each command in the activity panel (right side; collapse it with its header button) shows a **Local** or **Cloud** badge, with the reason (for example "Sent to the cloud (local model passed: needs new text)"). The status pill reads "System 1 · Haiku 4.5 + Laya" when the fast path is on.
 
 Run it (Python 3.10+ with CUDA PyTorch; see `fastpath/requirements.txt`):
 
