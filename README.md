@@ -12,7 +12,7 @@ Requires Node 22+.
 
 ```bash
 npm install
-cp .env.example .env        # then set ANTHROPIC_API_KEY
+cp .env.example .env        # then set ANTHROPIC_API_KEY or OPENAI_API_KEY
 npm run dev                 # server on :8787, web app on http://localhost:5173
 ```
 
@@ -25,7 +25,7 @@ Without an API key the app still loads. The status pill shows **API key missing*
 ```
  web (React + Excalidraw)                         server (Fastify)
  ┌───────────────────────────────┐   POST /api/command   ┌──────────────────────────────┐
- │ command bar ──► scene summary ├──────────────────────►│ System 1: claude-haiku-4-5   │
+ │ command bar ──► scene summary ├──────────────────────►│ System 1: Claude or OpenAI  │
  │                               │                       │ streaming tool calls         │
  │ executor ◄── validated actions│◄──── SSE events ──────┤ each call validated (zod)    │
  │ (placement, arrows, undo)     │                       │ and forwarded immediately    │
@@ -52,10 +52,12 @@ In dev builds, `window.__board.apply(text, actions)` feeds actions through the s
 
 | Variable | Default | |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | Required for commands; stays server-side |
-| `SYSTEM1_MODEL` | `claude-haiku-4-5` | Fast-path model |
+| `ANTHROPIC_API_KEY` | — | Anthropic key; stays server-side |
+| `OPENAI_API_KEY` | — | OpenAI key; stays server-side. Set either key (at least one is required for commands) |
+| `LLM_PROVIDER` | auto | `anthropic` or `openai`. By default the provider whose key is set is used, Anthropic if both |
+| `SYSTEM1_MODEL` | `claude-haiku-4-5` / `gpt-4.1-mini` | Fast-path model (default depends on the provider) |
 | `PORT` | `8787` | Server port (Vite proxies `/api` to it) |
 
 ## Licenses
 
-Excalidraw (MIT), React (MIT), Fastify (MIT), zod (MIT), lucide-react (ISC), Anthropic SDK (MIT). Excalidraw's fonts are self-hosted from the npm package (OFL).
+Excalidraw (MIT), React (MIT), Fastify (MIT), zod (MIT), lucide-react (ISC), Anthropic SDK (MIT), OpenAI SDK (Apache-2.0). Excalidraw's fonts are self-hosted from the npm package (OFL).

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ACTION_DESCRIPTIONS, ACTION_NAMES, ACTION_SCHEMAS, parseAction, type CommandEvent, type CommandRequest } from "@board/shared";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
 
-export const SYSTEM1_MODEL = process.env.SYSTEM1_MODEL || "claude-haiku-4-5";
+export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5";
 
 /** Tool definitions generated from the shared zod schemas (single source of truth). */
 export const TOOLS: Anthropic.Tool[] = ACTION_NAMES.map((name, i) => {
@@ -20,7 +20,7 @@ export const TOOLS: Anthropic.Tool[] = ACTION_NAMES.map((name, i) => {
   };
 });
 
-type Emit = (event: CommandEvent) => void;
+export type Emit = (event: CommandEvent) => void;
 
 /** Turn one completed content block into client events. Exported for tests. */
 export function blockToEvents(block: Anthropic.ContentBlock, startedAt: number): CommandEvent[] {
@@ -38,13 +38,19 @@ export function blockToEvents(block: Anthropic.ContentBlock, startedAt: number):
  * each completed tool call is validated and forwarded to the client immediately.
  * There is no tool-result round trip - the client applies the actions.
  */
-export async function runSystem1(client: Anthropic, req: CommandRequest, emit: Emit, signal?: AbortSignal) {
+export async function runSystem1(
+  client: Anthropic,
+  req: CommandRequest,
+  emit: Emit,
+  signal?: AbortSignal,
+  model = DEFAULT_ANTHROPIC_MODEL,
+) {
   const startedAt = Date.now();
   let count = 0;
 
   const stream = client.messages.stream(
     {
-      model: SYSTEM1_MODEL,
+      model,
       max_tokens: 4096,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: TOOLS,

@@ -1,8 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import Fastify from "fastify";
 import { z } from "zod";
 import type { CommandEvent, CommandRequest } from "@board/shared";
-import { SYSTEM1_MODEL, runSystem1 } from "./system1";
+import type { Provider } from "./provider";
 
 const CommandBody = z.object({
   text: z.string().trim().min(1).max(2000),
@@ -14,10 +13,10 @@ const CommandBody = z.object({
   }),
 });
 
-export function buildApp(anthropic: Anthropic, opts: { logger?: boolean } = {}) {
+export function buildApp(provider: Provider, opts: { logger?: boolean } = {}) {
   const app = Fastify({ logger: opts.logger === false ? false : { level: process.env.LOG_LEVEL || "info" } });
 
-  app.get("/api/health", async () => ({ ok: true, model: SYSTEM1_MODEL, hasKey: Boolean(process.env.ANTHROPIC_API_KEY) }));
+  app.get("/api/health", async () => ({ ok: true, model: provider.model, provider: provider.name, hasKey: provider.hasKey }));
 
   app.post("/api/command", async (request, reply) => {
     const body = CommandBody.safeParse(request.body);
@@ -37,11 +36,11 @@ export function buildApp(anthropic: Anthropic, opts: { logger?: boolean } = {}) 
     res.on("close", () => abort.abort());
 
     try {
-      await runSystem1(anthropic, body.data as CommandRequest, emit, abort.signal);
+      await provider.run(body.data as CommandRequest, emit, abort.signal);
     } catch (err) {
       if (!abort.signal.aborted) {
         request.log.error(err);
-        emit({ type: "error", message: describeError(err) });
+        emit({ type: "error", message: provider.describeError(err) ?? "Something went wrong running the command." });
       }
     } finally {
       res.end();
@@ -49,12 +48,4 @@ export function buildApp(anthropic: Anthropic, opts: { logger?: boolean } = {}) 
   });
 
   return app;
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof Anthropic.AuthenticationError) return "Server has no valid ANTHROPIC_API_KEY.";
-  if (err instanceof Anthropic.RateLimitError) return "Rate limited by the model API. Try again in a moment.";
-  if (err instanceof Anthropic.APIError) return `Model API error (${err.status ?? "network"}).`;
-  if (err instanceof Error && /api key|authentication/i.test(err.message)) return "Server has no ANTHROPIC_API_KEY configured.";
-  return "Something went wrong running the command.";
 }

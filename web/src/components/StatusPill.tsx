@@ -8,7 +8,7 @@ export function StatusPill({ status }: { status: ServerStatus }) {
     status.state === "ready"
       ? ["ok", `System 1 · ${MODEL_NAMES[status.model] ?? status.model}`, "Fast model connected"]
       : status.state === "no-key"
-        ? ["warn", "API key missing", "Set ANTHROPIC_API_KEY in .env and restart the server"]
+        ? ["warn", "API key missing", "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env and restart the server"]
         : status.state === "offline"
           ? ["bad", "Server offline", "Start the server: npm run dev"]
           : ["idle", "Connecting…", ""];
