@@ -1,0 +1,33 @@
+{"id": 101, "cat": "undo", "scene": "flow", "text": "take that back", "expect": {"action": "undo_last_command"}}
+{"id": 102, "cat": "undo", "scene": "notes", "text": "undo the last thing", "expect": {"action": "undo_last_command"}}
+{"id": 103, "cat": "clear", "scene": "flow", "text": "wipe the whole board", "expect": {"action": "clear_board"}}
+{"id": 104, "cat": "delete", "scene": "flow", "text": "delete the error box", "expect": {"action": "delete_elements", "target": "err"}}
+{"id": 105, "cat": "delete", "scene": "notes", "text": "remove the ship v2 sticky", "expect": {"action": "delete_elements", "target": "s2"}}
+{"id": 106, "cat": "delete", "scene": "arch_sel", "text": "delete this", "expect": {"action": "delete_elements", "target": "cache"}}
+{"id": 107, "cat": "delete", "scene": "flow", "text": "get rid of the start circle", "expect": {"action": "delete_elements", "target": "start"}}
+{"id": 108, "cat": "recolor", "scene": "flow", "text": "make the decision diamond orange", "expect": {"action": "update_element", "target": "check", "color": "orange"}}
+{"id": 109, "cat": "recolor", "scene": "arch", "text": "turn the gateway green", "expect": {"action": "update_element", "target": "api", "color": "green"}}
+{"id": 110, "cat": "recolor", "scene": "notes", "text": "color the buy milk note blue", "expect": {"action": "update_element", "target": "s1", "color": "blue"}}
+{"id": 111, "cat": "recolor", "scene": "arch_sel", "text": "paint it gray", "expect": {"action": "update_element", "target": "cache", "color": "gray"}}
+{"id": 112, "cat": "recolor", "scene": "flow", "text": "make it purple", "expect": {"action": "update_element", "target": "err", "color": "purple"}}
+{"id": 113, "cat": "resize", "scene": "flow", "text": "make the save order box big", "expect": {"action": "update_element", "target": "save", "size": "large"}}
+{"id": 114, "cat": "resize", "scene": "arch", "text": "make postgres small", "expect": {"action": "update_element", "target": "db", "size": "small"}}
+{"id": 115, "cat": "resize", "scene": "notes", "text": "make the title medium sized", "expect": {"action": "update_element", "target": "title", "size": "medium"}}
+{"id": 116, "cat": "move", "scene": "flow", "text": "move the error box to the right", "expect": {"action": "move_element", "target": "err", "direction": "right"}}
+{"id": 117, "cat": "move", "scene": "arch", "text": "push the cache down", "expect": {"action": "move_element", "target": "cache", "direction": "down"}}
+{"id": 118, "cat": "move", "scene": "notes", "text": "move the buy milk note left", "expect": {"action": "move_element", "target": "s1", "direction": "left"}}
+{"id": 119, "cat": "move", "scene": "arch_sel", "text": "move it up a little", "expect": {"action": "move_element", "target": "cache", "direction": "up"}}
+{"id": 120, "cat": "add_shape", "scene": "empty", "text": "draw a diamond", "expect": {"action": "add_shape", "kind": "diamond"}}
+{"id": 121, "cat": "add_shape", "scene": "flow", "text": "add a green box", "expect": {"action": "add_shape", "kind": "rectangle", "color": "green"}}
+{"id": 122, "cat": "add_shape", "scene": "notes", "text": "put a yellow sticky on the board", "expect": {"action": "add_shape", "kind": "sticky", "color": "yellow"}}
+{"id": 123, "cat": "noisy", "scene": "flow", "text": "uh delete the, the error box", "expect": {"action": "delete_elements", "target": "err"}}
+{"id": 124, "cat": "noisy", "scene": "arch", "text": "make the cache blue, sorry, I mean purple", "expect": {"action": "update_element", "target": "cache", "color": "purple"}}
+{"id": 125, "cat": "labelled_shape", "scene": "flow", "text": "add a box saying send email", "expect": {"action": "add_shape", "kind": "rectangle", "needs_text": true}}
+{"id": 126, "cat": "arrow", "scene": "flow", "text": "connect save order to the start", "expect": {"action": "add_arrow"}}
+{"id": 127, "cat": "multi", "scene": "flow", "text": "delete the error box and the diamond", "expect": {"action": "delete_elements", "multi_step": true}}
+{"id": 128, "cat": "multi", "scene": "notes", "text": "make all the notes green", "expect": {"action": "update_element", "target": ["s1", "s2", "s3"], "color": "green", "multi_step": true}}
+{"id": 129, "cat": "rename", "scene": "flow", "text": "rename the diamond to is valid", "expect": {"action": "update_element", "target": "check", "needs_text": true}}
+{"id": 130, "cat": "text", "scene": "arch", "text": "add a heading called architecture", "expect": {"action": "add_text", "needs_text": true}}
+{"id": 131, "cat": "chatter", "scene": "flow", "text": "hold on, my phone is ringing", "expect": {"action": "none"}}
+{"id": 132, "cat": "chatter", "scene": "arch", "text": "what do you think about this design", "expect": {"action": "none"}}
+{"id": 133, "cat": "chatter", "scene": "notes", "text": "okay that looks good", "expect": {"action": "none"}}

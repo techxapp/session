@@ -1,0 +1,4 @@
+# Fast-path sidecar (fastpath/server.py). Install PyTorch first with the CUDA build for your GPU, e.g.
+#   python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
+# On Windows use a python.org Python, not Miniconda (its MSVC runtime breaks torch).
+laya==0.4.0

@@ -37,6 +37,25 @@ Without an API key the app still loads. The status pill shows **API key missing*
 - **`web/`**: `board/executor.ts` turns actions into Excalidraw elements. It handles relative and region placement, overlap avoidance, arrows bound to shapes (they stay attached when you drag), re-routing on move, label edits and cascading deletes. `board/useCommandRunner.ts` streams events, records one undo step per command and scrolls new content into view.
 - The model gets a compact text summary of the scene (ids, labels, positions, selection, recently touched elements), so references like "it", "the database" or "that box" resolve.
 
+### Optional: local fast path (Laya)
+
+Simple commands ("make the API red", "move it left", "delete all the notes", "undo") can be decided by a small local model instead of the cloud LLM, in about 0.2–0.45 s on a 4 GB laptop GPU and with no API cost. `fastpath/server.py` runs a fine-tuned [Laya](https://huggingface.co/convaiinnovations/laya) checkpoint (Apache 2.0) as a sidecar. When `FASTPATH_URL` is set, the server asks it first:
+
+- **fast**: the sidecar is confident. Its actions are validated with the same zod schemas and streamed to the board.
+- **ignore**: chatter ("can everyone see my screen") is dropped.
+- **llm**: anything else (new text, several changes, low confidence) goes to the cloud model, as does every command when the sidecar is down or slower than `FASTPATH_TIMEOUT_MS`.
+
+Each command in the activity feed shows a **Local** or **Cloud** badge, with the reason (for example "Sent to the cloud (local model passed: needs new text)"). The status pill reads "System 1 · Haiku 4.5 + Laya" when the fast path is on.
+
+Run it (Python 3.10+ with CUDA PyTorch; see `fastpath/requirements.txt`):
+
+```
+LAYA_CHECKPOINT=/path/to/laya-checkpoint python fastpath/server.py   # listens on 127.0.0.1:8788
+FASTPATH_URL=http://127.0.0.1:8788 npm run dev
+```
+
+The checkpoint is produced by `eval/make_train.py` + `eval/train_laya.py` (see `eval/`); it is not in the repo.
+
 ## Scripts
 
 | Command | What it does |
@@ -57,7 +76,11 @@ In dev builds, `window.__board.apply(text, actions)` feeds actions through the s
 | `LLM_PROVIDER` | auto | `anthropic` or `openai`. By default the provider whose key is set is used, Anthropic if both |
 | `SYSTEM1_MODEL` | `claude-haiku-4-5` / `gpt-4.1-mini` | Fast-path model (default depends on the provider) |
 | `PORT` | `8787` | Server port (Vite proxies `/api` to it) |
+| `FASTPATH_URL` | — | Local Laya sidecar, e.g. `http://127.0.0.1:8788`. Unset = every command goes to the cloud model |
+| `FASTPATH_TIMEOUT_MS` | `1000` | How long to wait for the sidecar before using the cloud model |
+
+The sidecar reads its own variables: `LAYA_CHECKPOINT` (required), `FASTPATH_PORT` (8788), `FASTPATH_HOST` (127.0.0.1), `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5), `LAYA_DEVICE`.
 
 ## Licenses
 
-Excalidraw (MIT), React (MIT), Fastify (MIT), zod (MIT), lucide-react (ISC), Anthropic SDK (MIT), OpenAI SDK (Apache-2.0). Excalidraw's fonts are self-hosted from the npm package (OFL).
+Excalidraw (MIT), React (MIT), Fastify (MIT), zod (MIT), lucide-react (ISC), Anthropic SDK (MIT), OpenAI SDK (Apache-2.0). Optional fast path: Laya and its ModernBERT base (Apache-2.0), PyTorch (BSD). Excalidraw's fonts are self-hosted from the npm package (OFL).

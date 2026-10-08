@@ -1,0 +1,18 @@
+{"id": 201, "cat": "set", "scene": "notes", "text": "delete all the stickies", "expect": {"action": "delete_elements", "target": ["s1", "s2", "s3"], "multi_step": true}}
+{"id": 202, "cat": "set", "scene": "arch", "text": "make every box blue", "expect": {"action": "update_element", "target": ["api", "cache", "user"], "color": "blue", "multi_step": true}}
+{"id": 203, "cat": "set", "scene": "flow", "text": "move both boxes down", "expect": {"action": "move_element", "target": ["err", "save"], "direction": "down", "multi_step": true}}
+{"id": 204, "cat": "set", "scene": "notes", "text": "make all the sticky notes small", "expect": {"action": "update_element", "target": ["s1", "s2", "s3"], "size": "small", "multi_step": true}}
+{"id": 205, "cat": "set", "scene": "arch", "text": "make everything red", "expect": {"action": "update_element", "target": ["api", "cache", "db", "user"], "color": "red", "multi_step": true}}
+{"id": 206, "cat": "set", "scene": "flow", "text": "delete all the rectangles", "expect": {"action": "delete_elements", "target": ["err", "save"], "multi_step": true}}
+{"id": 207, "cat": "set", "scene": "notes", "text": "turn all the yellow notes pink", "expect": {"action": "update_element", "target": ["s1", "s2"], "color": "pink", "multi_step": true}}
+{"id": 208, "cat": "set", "scene": "arch", "text": "nudge all the boxes to the right", "expect": {"action": "move_element", "target": ["api", "cache", "user"], "direction": "right", "multi_step": true}}
+{"id": 209, "cat": "set", "scene": "notes", "text": "delete every note", "expect": {"action": "delete_elements", "target": ["s1", "s2", "s3"], "multi_step": true}}
+{"id": 210, "cat": "set", "scene": "flow", "text": "remove the boxes", "expect": {"action": "delete_elements", "target": ["err", "save"], "multi_step": true}}
+{"id": 211, "cat": "set_llm", "scene": "notes", "text": "make all the notes green and delete the title", "expect": {"action": "update_element", "target": "several", "color": "green", "multi_step": true}}
+{"id": 212, "cat": "set_llm", "scene": "arch", "text": "delete every box except the cache", "expect": {"action": "delete_elements", "target": "several", "multi_step": true}}
+{"id": 213, "cat": "set_llm", "scene": "notes", "text": "move all the notes on the right down", "expect": {"action": "move_element", "target": "several", "direction": "down", "multi_step": true}}
+{"id": 214, "cat": "set_llm", "scene": "arch", "text": "make all the diamonds red", "expect": {"action": "update_element", "target": "several", "color": "red", "multi_step": true}}
+{"id": 215, "cat": "set_llm", "scene": "arch", "text": "add a sticky next to every box", "expect": {"action": "add_shape", "target": "several", "kind": "sticky", "multi_step": true}}
+{"id": 216, "cat": "set_llm", "scene": "notes", "text": "connect all the notes to the title", "expect": {"action": "add_arrow", "multi_step": true}}
+{"id": 217, "cat": "set_llm", "scene": "notes", "text": "rename all the notes to done", "expect": {"action": "update_element", "target": ["s1", "s2", "s3"], "needs_text": true, "multi_step": true}}
+{"id": 218, "cat": "undo", "scene": "flow", "text": "undo all of that", "expect": {"action": "undo_last_command"}}

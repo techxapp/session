@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { CommandEvent } from "@board/shared";
+import type { CommandEvent, CommandSource } from "@board/shared";
 import { streamCommand } from "../api";
 import { ActionError, applyAction, isTopLevel } from "./executor";
 import { summarize, visibleArea } from "./summary";
@@ -18,6 +18,8 @@ export interface LogEntry {
   firstMs?: number;
   totalMs?: number;
   notes: { kind: "say" | "warn" | "error"; text: string }[];
+  /** Which model decided the command (local fast path or cloud LLM) and why; set as soon as the server knows. */
+  source?: { kind: CommandSource; model: string; detail: string; ms: number };
 }
 
 type Snapshot = readonly ExcalidrawElement[];
@@ -95,6 +97,8 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null) {
               if (!(err instanceof ActionError)) console.error(err);
               update(id, (e) => ({ ...e, notes: [...e.notes, { kind: "warn", text: msg }] }));
             }
+          } else if (ev.type === "route") {
+            update(id, (e) => ({ ...e, source: { kind: ev.source, model: ev.model, detail: ev.detail, ms: ev.ms } }));
           } else if (ev.type === "say") {
             update(id, (e) => ({ ...e, notes: [...e.notes, { kind: "say", text: ev.text }] }));
           } else if (ev.type === "invalid") {

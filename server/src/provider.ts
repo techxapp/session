@@ -11,6 +11,8 @@ export interface Provider {
   name: ProviderName;
   model: string;
   hasKey: boolean;
+  /** True when a local fast-path model answers simple commands first (see fastpath.ts). */
+  fastPath?: boolean;
   run(req: CommandRequest, emit: Emit, signal?: AbortSignal): Promise<void>;
   /** User-facing message for a failed call, or undefined if the error isn't one this provider recognises. */
   describeError(err: unknown): string | undefined;

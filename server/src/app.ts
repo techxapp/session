@@ -16,7 +16,13 @@ const CommandBody = z.object({
 export function buildApp(provider: Provider, opts: { logger?: boolean } = {}) {
   const app = Fastify({ logger: opts.logger === false ? false : { level: process.env.LOG_LEVEL || "info" } });
 
-  app.get("/api/health", async () => ({ ok: true, model: provider.model, provider: provider.name, hasKey: provider.hasKey }));
+  app.get("/api/health", async () => ({
+    ok: true,
+    model: provider.model,
+    provider: provider.name,
+    hasKey: provider.hasKey,
+    fastPath: Boolean(provider.fastPath),
+  }));
 
   app.post("/api/command", async (request, reply) => {
     const body = CommandBody.safeParse(request.body);
@@ -36,6 +42,8 @@ export function buildApp(provider: Provider, opts: { logger?: boolean } = {}) {
     res.on("close", () => abort.abort());
 
     try {
+      // With a fast path, the wrapper says which side decided; otherwise it is always the cloud model.
+      if (!provider.fastPath) emit({ type: "route", source: "cloud", model: provider.model, detail: "Cloud model", ms: 0 });
       await provider.run(body.data as CommandRequest, emit, abort.signal);
     } catch (err) {
       if (!abort.signal.aborted) {

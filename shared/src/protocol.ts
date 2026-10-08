@@ -28,8 +28,15 @@ export interface CommandRequest {
   scene: SceneSummary;
 }
 
+/**
+ * Who decided a command: the local fast-path model (Laya sidecar) or the cloud LLM.
+ * `detail` says why, e.g. the local model's reason for passing a command on.
+ */
+export type CommandSource = "local" | "cloud";
+
 /** Server -> client events, sent as SSE `data:` lines. */
 export type CommandEvent =
+  | { type: "route"; source: CommandSource; model: string; detail: string; ms: number }
   | { type: "action"; action: BoardAction; ms: number }
   | { type: "say"; text: string }
   | { type: "invalid"; name: string; error: string }

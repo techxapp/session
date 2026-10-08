@@ -3,6 +3,7 @@ import type OpenAI from "openai";
 import { describe, expect, it } from "vitest";
 import type { CommandEvent, CommandRequest } from "@board/shared";
 import { buildApp } from "./app";
+import { fastPathFromEnv, httpFastPath, withFastPath, type FastDecision } from "./fastpath";
 import { anthropicProvider, openaiProvider, providerFromEnv } from "./provider";
 import { buildUserMessage } from "./prompt";
 import { TOOLS, blockToEvents } from "./system1";
@@ -107,7 +108,8 @@ describe("POST /api/command", () => {
     const res = await app.inject({ method: "POST", url: "/api/command", payload: { text: "add a db next to the api", scene } });
     expect(res.headers["content-type"]).toBe("text/event-stream");
     const events = parseSse(res.body);
-    expect(events.map((e) => e.type)).toEqual(["action", "action", "invalid", "done"]);
+    expect(events.map((e) => e.type)).toEqual(["route", "action", "action", "invalid", "done"]);
+    expect(events[0]).toMatchObject({ type: "route", source: "cloud", model: "claude-haiku-4-5" });
     expect(events.at(-1)).toMatchObject({ type: "done", actions: 2, model: "fake-model" });
     expect(calls[0]).toMatchObject({ model: "claude-haiku-4-5", tool_choice: { type: "auto" } });
   });
@@ -119,7 +121,7 @@ describe("POST /api/command", () => {
       url: "/api/command",
       payload: { text: "x", scene },
     });
-    expect(parseSse(res.body).map((e) => e.type)).toEqual(["error", "done"]);
+    expect(parseSse(res.body).map((e) => e.type)).toEqual(["route", "error", "done"]);
   });
 
   it("rejects bad requests with 400", async () => {
@@ -188,7 +190,7 @@ describe("POST /api/command (OpenAI)", () => {
       payload: { text: "add a db next to the api", scene },
     });
     const events = parseSse(res.body);
-    expect(events.map((e) => e.type)).toEqual(["action", "action", "invalid", "say", "done"]);
+    expect(events.map((e) => e.type)).toEqual(["route", "action", "action", "invalid", "say", "done"]);
     expect(events.at(-1)).toMatchObject({ type: "done", actions: 2, model: "fake-gpt" });
     expect(calls[0]).toMatchObject({ model: "gpt-4.1-mini", stream: true, tool_choice: "auto" });
   });
@@ -200,7 +202,7 @@ describe("POST /api/command (OpenAI)", () => {
       url: "/api/command",
       payload: { text: "x", scene },
     });
-    expect(parseSse(res.body).map((e) => e.type)).toEqual(["error", "done"]);
+    expect(parseSse(res.body).map((e) => e.type)).toEqual(["route", "error", "done"]);
   });
 });
 
@@ -218,5 +220,93 @@ describe("providerFromEnv", () => {
   });
   it("rejects an unknown provider", () => {
     expect(() => providerFromEnv({ LLM_PROVIDER: "gemini" })).toThrow(/LLM_PROVIDER/);
+  });
+});
+
+describe("fast path", () => {
+  const command = (provider: ReturnType<typeof anthropicProvider>) =>
+    buildApp(provider, { logger: false })
+      .inject({ method: "POST", url: "/api/command", payload: { text: "make the api red", scene } })
+      .then((res) => parseSse(res.body));
+  const decide = (d: FastDecision) => async () => d;
+
+  it("streams confident local actions without calling the cloud model", async () => {
+    const { client, calls } = fakeClient([toolUse("undo_last_command", {})]);
+    const fast = decide({
+      route: "fast",
+      actions: [{ name: "update_element", input: { target: "api", color: "red" } }],
+      reason: "update_element",
+      model: "laya:top6",
+    });
+    const events = await command(withFastPath(anthropicProvider(client), fast));
+    expect(events.map((e) => e.type)).toEqual(["route", "action", "done"]);
+    expect(events[0]).toMatchObject({ source: "local", model: "laya:top6" });
+    expect(events[1]).toMatchObject({ action: { name: "update_element", input: { target: "api", color: "red" } } });
+    expect(events[2]).toMatchObject({ model: "laya:top6", actions: 1 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("drops chatter the local model is sure about", async () => {
+    const { client, calls } = fakeClient([]);
+    const events = await command(withFastPath(anthropicProvider(client), decide({ route: "ignore", actions: null })));
+    expect(events.map((e) => e.type)).toEqual(["route", "done"]);
+    expect(events[1]).toMatchObject({ actions: 0 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("falls through to the cloud model, saying why", async () => {
+    const { client, calls } = fakeClient([toolUse("update_element", { target: "api", color: "red" })]);
+    const events = await command(
+      withFastPath(anthropicProvider(client), decide({ route: "llm", actions: null, reason: "needs new text" })),
+    );
+    expect(events.map((e) => e.type)).toEqual(["route", "action", "done"]);
+    expect(events[0]).toMatchObject({ source: "cloud", model: "claude-haiku-4-5", detail: expect.stringContaining("needs new text") });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("uses the cloud model when the sidecar fails or sends an invalid action", async () => {
+    const errors: unknown[] = [];
+    const down = async (): Promise<FastDecision> => {
+      throw new Error("ECONNREFUSED");
+    };
+    const a = fakeClient([]);
+    const events = await command(withFastPath(anthropicProvider(a.client), down, (err) => errors.push(err)));
+    expect(events[0]).toMatchObject({ source: "cloud", detail: expect.stringContaining("unavailable") });
+    expect(a.calls).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+
+    const b = fakeClient([]);
+    const bad = decide({ route: "fast", actions: [{ name: "update_element", input: { target: "api", color: "chartreuse" } }] });
+    expect((await command(withFastPath(anthropicProvider(b.client), bad)))[0]).toMatchObject({ source: "cloud" });
+    expect(b.calls).toHaveLength(1);
+  });
+
+  it("reports itself in /api/health", async () => {
+    const { client } = fakeClient([]);
+    const app = buildApp(withFastPath(anthropicProvider(client), decide({ route: "llm", actions: null })), { logger: false });
+    expect((await app.inject({ method: "GET", url: "/api/health" })).json()).toMatchObject({ fastPath: true, model: "claude-haiku-4-5" });
+  });
+
+  it("posts the command to the sidecar over HTTP", async () => {
+    const sidecar = buildApp(anthropicProvider(fakeClient([]).client), { logger: false });
+    let body: unknown;
+    sidecar.post("/decide", async (req) => {
+      body = req.body;
+      return { route: "ignore", actions: null };
+    });
+    const url = await sidecar.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      expect(await httpFastPath(url)({ text: "hello", scene })).toEqual({ route: "ignore", actions: null });
+      expect(body).toEqual({ text: "hello", scene });
+      await expect(httpFastPath(`${url}/missing`)({ text: "hello", scene })).rejects.toThrow(/404/);
+    } finally {
+      await sidecar.close();
+    }
+  });
+
+  it("is configured by FASTPATH_URL", () => {
+    expect(fastPathFromEnv({})).toBeUndefined();
+    expect(fastPathFromEnv({ FASTPATH_URL: "http://127.0.0.1:8788" })).toBeTypeOf("function");
+    expect(() => fastPathFromEnv({ FASTPATH_URL: "http://x", FASTPATH_TIMEOUT_MS: "soon" })).toThrow(/FASTPATH_TIMEOUT_MS/);
   });
 });

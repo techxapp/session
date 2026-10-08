@@ -1,0 +1,50 @@
+{"id": 1, "cat": "undo", "scene": "arch", "text": "undo", "expect": {"action": "undo_last_command"}}
+{"id": 2, "cat": "undo", "scene": "arch", "text": "undo that", "expect": {"action": "undo_last_command"}}
+{"id": 3, "cat": "undo", "scene": "notes", "text": "oops, go back", "expect": {"action": "undo_last_command"}}
+{"id": 4, "cat": "clear", "scene": "arch", "text": "clear the board", "expect": {"action": "clear_board"}}
+{"id": 5, "cat": "clear", "scene": "notes", "text": "erase everything", "expect": {"action": "clear_board"}}
+{"id": 6, "cat": "delete", "scene": "arch", "text": "delete the database", "expect": {"action": "delete_elements", "target": "db"}}
+{"id": 7, "cat": "delete", "scene": "arch", "text": "remove the cache box", "expect": {"action": "delete_elements", "target": "cache"}}
+{"id": 8, "cat": "delete", "scene": "arch_sel", "text": "get rid of that", "expect": {"action": "delete_elements", "target": "cache"}}
+{"id": 9, "cat": "delete", "scene": "notes", "text": "delete the buy milk note", "expect": {"action": "delete_elements", "target": "s1"}}
+{"id": 10, "cat": "delete", "scene": "notes", "text": "remove it", "expect": {"action": "delete_elements", "target": "s3"}}
+{"id": 11, "cat": "delete", "scene": "arch", "text": "delete the user box", "expect": {"action": "delete_elements", "target": "user"}}
+{"id": 12, "cat": "recolor", "scene": "arch", "text": "make the API red", "expect": {"action": "update_element", "target": "api", "color": "red"}}
+{"id": 13, "cat": "recolor", "scene": "arch", "text": "color the database purple", "expect": {"action": "update_element", "target": "db", "color": "purple"}}
+{"id": 14, "cat": "recolor", "scene": "arch_sel", "text": "make it pink", "expect": {"action": "update_element", "target": "cache", "color": "pink"}}
+{"id": 15, "cat": "recolor", "scene": "notes", "text": "turn the ship v2 note green", "expect": {"action": "update_element", "target": "s2", "color": "green"}}
+{"id": 16, "cat": "recolor", "scene": "arch", "text": "change postgres to teal", "expect": {"action": "update_element", "target": "db", "color": "teal"}}
+{"id": 17, "cat": "recolor", "scene": "arch", "text": "make that yellow", "expect": {"action": "update_element", "target": "db", "color": "yellow"}}
+{"id": 18, "cat": "recolor", "scene": "notes", "text": "paint the title red", "expect": {"action": "update_element", "target": "title", "color": "red"}}
+{"id": 19, "cat": "resize", "scene": "arch", "text": "make the cache large", "expect": {"action": "update_element", "target": "cache", "size": "large"}}
+{"id": 20, "cat": "resize", "scene": "arch", "text": "make the user box small", "expect": {"action": "update_element", "target": "user", "size": "small"}}
+{"id": 21, "cat": "resize", "scene": "notes", "text": "make the fix login bug note large", "expect": {"action": "update_element", "target": "s3", "size": "large"}}
+{"id": 22, "cat": "move", "scene": "arch", "text": "move the database down", "expect": {"action": "move_element", "target": "db", "direction": "down"}}
+{"id": 23, "cat": "move", "scene": "arch_sel", "text": "nudge it left a bit", "expect": {"action": "move_element", "target": "cache", "direction": "left"}}
+{"id": 24, "cat": "move", "scene": "arch", "text": "move the user box up", "expect": {"action": "move_element", "target": "user", "direction": "up"}}
+{"id": 25, "cat": "move", "scene": "notes", "text": "shift the fix login bug note to the right", "expect": {"action": "move_element", "target": "s3", "direction": "right"}}
+{"id": 26, "cat": "move", "scene": "arch", "text": "move that up", "expect": {"action": "move_element", "target": "db", "direction": "up"}}
+{"id": 27, "cat": "add_shape", "scene": "empty", "text": "add a box", "expect": {"action": "add_shape", "kind": "rectangle"}}
+{"id": 28, "cat": "add_shape", "scene": "empty", "text": "draw a red circle", "expect": {"action": "add_shape", "kind": "ellipse", "color": "red"}}
+{"id": 29, "cat": "add_shape", "scene": "notes", "text": "add a sticky note", "expect": {"action": "add_shape", "kind": "sticky"}}
+{"id": 30, "cat": "add_shape", "scene": "arch", "text": "put a blue diamond on the board", "expect": {"action": "add_shape", "kind": "diamond", "color": "blue"}}
+{"id": 31, "cat": "noisy", "scene": "arch", "text": "uh make the um the database red", "expect": {"action": "update_element", "target": "db", "color": "red"}}
+{"id": 32, "cat": "noisy", "scene": "arch_sel", "text": "make it red, no wait, blue", "expect": {"action": "update_element", "target": "cache", "color": "blue"}}
+{"id": 33, "cat": "noisy", "scene": "notes", "text": "delete delete the ship v2 note", "expect": {"action": "delete_elements", "target": "s2"}}
+{"id": 34, "cat": "labelled_shape", "scene": "empty", "text": "add a box called payments", "expect": {"action": "add_shape", "kind": "rectangle", "needs_text": true}}
+{"id": 35, "cat": "labelled_shape", "scene": "notes", "text": "add a sticky note saying call mom", "expect": {"action": "add_shape", "kind": "sticky", "needs_text": true}}
+{"id": 36, "cat": "labelled_shape", "scene": "arch", "text": "draw a circle labeled queue", "expect": {"action": "add_shape", "kind": "ellipse", "needs_text": true}}
+{"id": 37, "cat": "text", "scene": "empty", "text": "write a title saying system design", "expect": {"action": "add_text", "needs_text": true}}
+{"id": 38, "cat": "text", "scene": "notes", "text": "add a caption that says draft", "expect": {"action": "add_text", "needs_text": true}}
+{"id": 39, "cat": "arrow", "scene": "arch", "text": "connect the user to the database", "expect": {"action": "add_arrow"}}
+{"id": 40, "cat": "arrow", "scene": "arch", "text": "draw an arrow from cache to postgres", "expect": {"action": "add_arrow"}}
+{"id": 41, "cat": "multi", "scene": "empty", "text": "add three boxes, frontend, backend and database, and connect them", "expect": {"action": "add_shape", "multi_step": true, "needs_text": true}}
+{"id": 42, "cat": "multi", "scene": "arch", "text": "make the API red and move it left", "expect": {"action": "update_element", "multi_step": true}}
+{"id": 43, "cat": "multi", "scene": "notes", "text": "delete all the sticky notes", "expect": {"action": "delete_elements", "target": ["s1", "s2", "s3"], "multi_step": true}}
+{"id": 44, "cat": "multi", "scene": "arch", "text": "draw a login box and connect it to the api", "expect": {"action": "add_shape", "multi_step": true, "needs_text": true}}
+{"id": 45, "cat": "rename", "scene": "arch", "text": "rename the cache to memcached", "expect": {"action": "update_element", "target": "cache", "needs_text": true}}
+{"id": 46, "cat": "rename", "scene": "notes", "text": "change the title to sprint 12", "expect": {"action": "update_element", "target": "title", "needs_text": true}}
+{"id": 47, "cat": "chatter", "scene": "arch", "text": "hey can you hear me", "expect": {"action": "none"}}
+{"id": 48, "cat": "chatter", "scene": "notes", "text": "sorry, I was talking to someone else", "expect": {"action": "none"}}
+{"id": 49, "cat": "chatter", "scene": "arch", "text": "let me think about this for a second", "expect": {"action": "none"}}
+{"id": 50, "cat": "chatter", "scene": "empty", "text": "does anyone want coffee", "expect": {"action": "none"}}

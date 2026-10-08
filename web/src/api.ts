@@ -1,6 +1,6 @@
 import type { CommandEvent, CommandRequest } from "@board/shared";
 
-export async function checkHealth(): Promise<{ ok: boolean; model: string; hasKey: boolean } | null> {
+export async function checkHealth(): Promise<{ ok: boolean; model: string; hasKey: boolean; fastPath?: boolean } | null> {
   try {
     const res = await fetch("/api/health");
     return res.ok ? await res.json() : null;

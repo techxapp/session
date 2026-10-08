@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowUp, Check, CircleSlash, Loader2, MessageSquare, Sparkles, Square, Undo2 } from "lucide-react";
+import { AlertTriangle, ArrowUp, Check, CircleSlash, Cloud, Cpu, Loader2, MessageSquare, Sparkles, Square, Undo2 } from "lucide-react";
 import type { LogEntry } from "../board/useCommandRunner";
+import { modelName } from "./StatusPill";
 
 const SUGGESTIONS = [
   "Draw a login flow: user, web app, auth service, database",
@@ -133,6 +134,12 @@ function ActivityRow({ entry, latest, onUndo }: { entry: LogEntry; latest: boole
           <span className="row-text" title={entry.text}>
             {entry.text}
           </span>
+          {entry.source && (
+            <span className={`source source-${entry.source.kind}`} title={`${entry.source.detail} · ${entry.source.model}`}>
+              {entry.source.kind === "local" ? <Cpu size={11} /> : <Cloud size={11} />}
+              {entry.source.kind === "local" ? "Local" : "Cloud"}
+            </span>
+          )}
           <span className="row-meta">{meta}</span>
           {latest && entry.status === "done" && (
             <button className="row-undo" onClick={onUndo} title="Undo this command">
@@ -140,6 +147,12 @@ function ActivityRow({ entry, latest, onUndo }: { entry: LogEntry; latest: boole
             </button>
           )}
         </div>
+        {entry.source && (
+          <div className={`note note-route note-${entry.source.kind}`}>
+            {modelName(entry.source.model)} · {entry.source.detail}
+            {entry.source.kind === "local" && entry.source.ms > 0 ? ` · ${fmt(entry.source.ms)}` : ""}
+          </div>
+        )}
         {entry.notes.map((n, i) => (
           <div key={i} className={`note note-${n.kind}`}>
             {n.kind === "say" ? <MessageSquare size={12} /> : <AlertTriangle size={12} />}

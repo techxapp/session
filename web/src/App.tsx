@@ -48,7 +48,13 @@ export default function App() {
     const poll = async () => {
       const h = await checkHealth();
       if (!alive) return;
-      setStatus(!h ? { state: "offline" } : h.hasKey ? { state: "ready", model: h.model } : { state: "no-key", model: h.model });
+      setStatus(
+        !h
+          ? { state: "offline" }
+          : h.hasKey
+            ? { state: "ready", model: h.model, fastPath: Boolean(h.fastPath) }
+            : { state: "no-key", model: h.model, fastPath: Boolean(h.fastPath) },
+      );
     };
     poll();
     const t = setInterval(poll, 15000);
