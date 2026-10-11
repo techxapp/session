@@ -27,7 +27,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fastpath.decide import build_questions, draws_object, parse_answers, resolve_target, route_why, words  # noqa: E402
+from fastpath.decide import (  # noqa: E402
+    build_questions,
+    draws_object,
+    object_command,
+    parse_answers,
+    resolve_target,
+    route_object,
+    route_why,
+    words,
+)
 
 # Laya's head holds about this many target options; with more elements the target is left to the code rules.
 MAX_TARGET_OPTIONS = 10
@@ -102,6 +111,11 @@ class FastPath:
         t = time.perf_counter()
         if len(words(text)) > MAX_WORDS:
             return {"route": "llm", "actions": None, "reason": "long command", "model": self.name, "ms": 0}
+        obj = object_command(text)
+        if obj and not obj["casual"]:  # "draw a tree": nothing for the model to decide
+            decision, actions, why = route_object(obj, None, self.threshold)
+            return {"route": decision, "actions": actions, "reason": why, "model": self.name, "answers": {},
+                    "target_rule": None, "ms": round((time.perf_counter() - t) * 1000, 1)}  # fmt: skip
         aliased, back = alias_scene(scene)
         questions = build_questions(aliased)
         if len(questions.get("target", {}).get("criteria", {})) > MAX_TARGET_OPTIONS + 1:
@@ -116,9 +130,10 @@ class FastPath:
         if rule:
             ans["target"] = (rule[0], 1.0)
         decision, actions, why = route_why(ans, self.threshold)
-        obj = draws_object(text, decision, actions)
-        if obj:
-            decision, actions, why = "llm", None, f"drawing a {obj} needs the LLM"
+        if obj:  # casual "let's grab a tree": fast only if the model agrees it's a board command
+            decision, actions, why = route_object(obj, ans, self.threshold)
+        elif drawn := draws_object(text, decision, actions):
+            decision, actions, why = "llm", None, f"drawing a {drawn} needs the LLM"
         return {
             "route": decision,
             "actions": unalias(actions, back) if actions else None,

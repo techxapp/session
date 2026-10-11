@@ -46,6 +46,7 @@ Simple commands ("make the API red", "move it left", "delete all the notes", "un
 
 - **fast**: the sidecar is confident. Its actions are validated with the same zod schemas and streamed to the board.
 - **ignore**: chatter ("can everyone see my screen") is dropped.
+- Simple object commands ("draw a tree", "add a big dog", "let's grab a tree") are built in code as `add_object` without the cloud model. A clear verb (draw, add, put...) skips Laya entirely; a casual one (grab, get, want...) also needs Laya to agree it's a board command, so "let's grab a coffee" chatter isn't drawn. Several objects, placement ("next to the house") or labels go to the cloud.
 - **llm**: anything else (new text, several changes, low confidence) goes to the cloud model, as does every command when the sidecar is down or slower than `FASTPATH_TIMEOUT_MS`.
 
 Each command in the activity panel (right side; collapse it with its header button) shows a **Local** or **Cloud** badge, with the reason (for example "Sent to the cloud (local model passed: needs new text)"). The status pill reads "System 1 · Haiku 4.5 + Laya" when the fast path is on.

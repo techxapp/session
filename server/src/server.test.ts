@@ -251,6 +251,20 @@ describe("fast path", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("streams a locally built add_object", async () => {
+    const { client, calls } = fakeClient([]);
+    const fast = decide({
+      route: "fast",
+      actions: [{ name: "add_object", input: { id: "tree", object: "tree", size: "large" } }],
+      reason: "add_object tree",
+      model: "laya:top6",
+    });
+    const events = await command(withFastPath(anthropicProvider(client), fast));
+    expect(events.map((e) => e.type)).toEqual(["route", "action", "done"]);
+    expect(events[1]).toMatchObject({ action: { name: "add_object", input: { object: "tree", size: "large" } } });
+    expect(calls).toHaveLength(0);
+  });
+
   it("drops chatter the local model is sure about", async () => {
     const { client, calls } = fakeClient([]);
     const events = await command(withFastPath(anthropicProvider(client), decide({ route: "ignore", actions: null })));

@@ -187,6 +187,69 @@ def draws_object(text: str, decision: str, actions: list[dict] | None) -> str | 
     return next((name for w, name in OBJECT_WORDS.items() if f" {w} " in padded or f" {w}s " in padded), None)
 
 
+# "Draw a tree" style commands, built in code without the LLM (`object_command`). Deliberately narrow: one object,
+# no placement, no second clause; anything else goes to the LLM, which sees the scene.
+OBJECT_PREFIX = {"ok", "okay", "so", "um", "uh", "er", "hmm", "now", "alright", "hey", "please", "can", "could", "would",
+                 "will", "you", "lets", "let", "s", "us", "i", "d", "like", "to", "just", "quickly"}  # fmt: skip
+# Verbs that always mean the board, and casual ones that could be chatter ("let's grab a coffee").
+OBJECT_VERBS = {"draw", "add", "put", "place", "insert", "sketch"}
+CASUAL_VERBS = {"grab", "get", "have", "bring", "want", "need", "show"}
+OBJECT_ARTICLES = {"a", "an", "one", "another"}
+OBJECT_SIZES = {"small": "small", "little": "small", "tiny": "small", "medium": "medium",
+                "big": "large", "large": "large", "huge": "large"}  # fmt: skip
+OBJECT_SUFFIX = {"please", "here", "there", "too", "now", "for", "me", "on", "the", "board", "as", "well", "thanks"}
+# Shape words must keep meaning shapes ("draw a box" is a rectangle), so no object may claim one.
+assert not set(OBJECT_WORDS) & (set(KIND_WORDS) | set(PLURAL_KIND_WORDS)), "an object name/alias is a shape word"
+
+
+def object_command(text: str) -> dict | None:
+    """{object, size, casual} for a command that only asks to draw one catalog object, else None.
+
+    Shape: [fillers/politeness] verb [me] [a|an|one|another] [size] <object> [here|please|on the board...],
+    e.g. "draw a tree", "let's grab a big tree", "can you add a kid please". `casual` marks verbs that may
+    be chatter; the caller still needs the decision model to agree it's a board command.
+    """
+    said = words(text)
+    i = 0
+    while i < len(said) and said[i] in OBJECT_PREFIX:
+        i += 1
+    if i == len(said) or said[i] not in OBJECT_VERBS | CASUAL_VERBS:
+        return None
+    casual = said[i] in CASUAL_VERBS
+    i += 1
+    if i < len(said) and said[i] == "me":
+        i += 1
+    if i < len(said) and said[i] in OBJECT_ARTICLES:
+        i += 1
+    size = None
+    if i < len(said) and said[i] in OBJECT_SIZES:
+        size = OBJECT_SIZES[said[i]]
+        i += 1
+    rest = said[i:]
+    # Longest catalog phrase at this point; plurals ("two trees") don't match and go to the LLM.
+    for phrase, name in OBJECT_WORDS.items():
+        n = len(phrase.split())
+        if " ".join(rest[:n]) == phrase and all(w in OBJECT_SUFFIX for w in rest[n:]):
+            return {"object": name, "size": size, "casual": casual}
+    return None
+
+
+def object_action(cmd: dict) -> dict:
+    inp = {"id": re.sub(r"[^a-z0-9]+", "-", cmd["object"]), "object": cmd["object"]}
+    if cmd["size"]:
+        inp["size"] = cmd["size"]
+    return {"name": "add_object", "input": inp}
+
+
+def route_object(cmd: dict, ans: dict | None, threshold: float) -> tuple[str, list[dict] | None, str]:
+    """Route an `object_command`: fast for a clear verb, or for a casual one the model confidently calls a command."""
+    if cmd["casual"]:
+        on_board, conf = ans["on_board"] if ans else (False, 0.0)
+        if not on_board or conf < threshold:
+            return "llm", None, f"unsure whether '{cmd['object']}' is meant for the board"
+    return "fast", [object_action(cmd)], f"add_object {cmd['object']}"
+
+
 def resolve_set(said: list[str], elements: list[dict]) -> list[str] | str | None:
     """Ids for a command about a group of elements, SEVERAL if it is one code can't resolve, None if it isn't one."""
     if not (QUANTIFIERS & set(said) or any(w in PLURAL_KIND_WORDS or w in EVERYTHING_WORDS for w in said)):
