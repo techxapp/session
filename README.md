@@ -84,7 +84,7 @@ In dev builds, `window.__board.apply(text, actions)` feeds actions through the s
 | `FASTPATH_URL` | — | Local Laya sidecar, e.g. `http://127.0.0.1:8788`. Unset = every command goes to the cloud model |
 | `FASTPATH_TIMEOUT_MS` | `1000` | How long to wait for the sidecar before using the cloud model |
 
-The sidecar reads its own variables: `LAYA_CHECKPOINT` (required), `FASTPATH_PORT` (8788), `FASTPATH_HOST` (127.0.0.1), `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5), `LAYA_DEVICE`.
+The sidecar reads its own variables: `LAYA_CHECKPOINT` (required), `FASTPATH_PORT` (8788), `FASTPATH_HOST` (127.0.0.1), `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5), `FASTPATH_IDLE_UNLOAD_S` (900; unload the model from the GPU after this many idle seconds, the next command wakes it and is answered by the cloud model; 0 = never), `LAYA_DEVICE`.
 
 ## Licenses
 
