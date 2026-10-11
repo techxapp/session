@@ -37,7 +37,7 @@ Without an API key the app still loads. The status pill shows **API key missing*
 - **`shared/`**: the action vocabulary as zod schemas (`shared/src/actions.ts`). The same schemas generate the model's tool definitions and validate every tool call, so the model and the board can't drift apart.
 - **`server/`**: one streaming model call per command, with no tool-result round trip. Each completed tool call becomes an SSE `action` event. If you send a new command while one is running, the old request is cancelled.
 - **`web/`**: `board/executor.ts` turns actions into Excalidraw elements. It handles relative and region placement, overlap avoidance, arrows bound to shapes (they stay attached when you drag), re-routing on move, label edits and cascading deletes. `board/useCommandRunner.ts` streams events, records one undo step per command and scrolls new content into view.
-- **Objects** (`add_object`): clip-art from [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (Flat style). The SVGs are committed in `web/public/objects/`, so nothing is fetched at runtime. To add an object, add a line to `shared/objects.json` (name, Fluent icon name, aliases) and run `npm run objects --workspace web`, which downloads the pinned `@iconify-json/fluent-emoji-flat` package from npm and regenerates the folder.
+- **Objects** (`add_object`): clip-art from [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (Flat style), from the `@iconify-json/fluent-emoji-flat` package pinned in `web/package.json`. `npm run dev` and `npm run build` write the SVGs to `web/public/objects/` (gitignored), so nothing is fetched at runtime and it works offline once `npm install` has run. To add an object, add a line to `shared/objects.json` (name, Fluent icon name, aliases) and restart `npm run dev`.
 - The model gets a compact text summary of the scene (ids, labels, positions, selection, recently touched elements), so references like "it", "the database" or "that box" resolve.
 
 ### Optional: local fast path (Laya)
@@ -68,7 +68,7 @@ The checkpoint is produced by `eval/make_train.py` + `eval/train_laya.py` (see `
 | `npm test` | Executor tests (vitest + jsdom) and server tests (SSE route against a fake model stream) |
 | `npm run typecheck` | `tsc --noEmit` in every workspace |
 | `npm run format` | Prettier |
-| `npm run objects --workspace web` | Regenerate `web/public/objects/*.svg` from `shared/objects.json` (needs the npm registry) |
+| `npm run objects --workspace web` | Regenerate `web/public/objects/*.svg` from `shared/objects.json` (also runs automatically before dev and build) |
 
 In dev builds, `window.__board.apply(text, actions)` feeds actions through the same path as the model. That's useful for demos and UI testing without an API key.
 
@@ -88,4 +88,4 @@ The sidecar reads its own variables: `LAYA_CHECKPOINT` (required), `FASTPATH_POR
 
 ## Licenses
 
-Excalidraw (MIT), React (MIT), Fastify (MIT), zod (MIT), lucide-react (ISC), Anthropic SDK (MIT), OpenAI SDK (Apache-2.0). Optional fast path: Laya and its ModernBERT base (Apache-2.0), PyTorch (BSD). Excalidraw's fonts are self-hosted from the npm package (OFL). Object clip-art: Microsoft Fluent Emoji (MIT), see `web/public/objects/LICENSE.md`.
+Excalidraw (MIT), React (MIT), Fastify (MIT), zod (MIT), lucide-react (ISC), Anthropic SDK (MIT), OpenAI SDK (Apache-2.0). Optional fast path: Laya and its ModernBERT base (Apache-2.0), PyTorch (BSD). Excalidraw's fonts are self-hosted from the npm package (OFL). Object clip-art: Microsoft Fluent Emoji (MIT), see `web/public/objects/LICENSE.md` (generated).

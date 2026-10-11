@@ -50,7 +50,7 @@ export const AddShape = z.object({
   placement: Placement.optional(),
 });
 
-/** Clip-art the board can draw (shared/objects.json; images in web/public/objects, made by web/scripts/fetch-objects.mjs). */
+/** Clip-art the board can draw (shared/objects.json; images in web/public/objects, made by web/scripts/build-objects.mjs). */
 export type ObjectName = keyof typeof objects;
 export const OBJECT_NAMES = Object.keys(objects) as [ObjectName, ...ObjectName[]];
 
