@@ -49,6 +49,38 @@ describe("applyAction", () => {
     expect(labelOf(els, arrow)).toBe("HTTPS");
   });
 
+  it("draws clip-art objects that can be referenced, resized and connected", () => {
+    const { els, c } = run([
+      { name: "add_object", input: { id: "tree", object: "tree" } },
+      { name: "add_object", input: { id: "kid", object: "child", size: "small", placement: { relative_to: "tree", side: "right" } } },
+      { name: "add_arrow", input: { from: "kid", to: "tree" } },
+    ]);
+    const tree = byId(els, "tree");
+    expect(tree).toMatchObject({
+      type: "image",
+      fileId: "object:tree",
+      width: 120,
+      height: 120,
+      customData: { kind: "object", object: "tree" },
+    });
+    const kid = byId(els, "kid");
+    expect(kid.width).toBe(64);
+    expect(kid.x).toBeGreaterThan(tree.x + tree.width);
+    // The object name is its label, so the model sees it in the scene and can refer to it by name.
+    expect(summarize(els, [], c.recentIds, c.viewport).elements.find((e) => e.id === "tree")).toMatchObject({
+      type: "image",
+      label: "tree",
+    });
+
+    const centre = (e: ExcalidrawElement) => [e.x + e.width / 2, e.y + e.height / 2];
+    const bigger = run([{ name: "update_element", input: { target: "tree", size: "large" } }], c, els).els;
+    expect(byId(bigger, "tree").width).toBe(200);
+    expect(centre(byId(bigger, "tree"))).toEqual(centre(tree));
+    const arrow = live(bigger).find((e) => e.type === "arrow")!;
+    expect(arrow.width).not.toBe(live(els).find((e) => e.type === "arrow")!.width); // re-routed to the resized tree
+    expect(() => run([{ name: "update_element", input: { target: "tree", color: "red" } }], c, bigger)).toThrow(ActionError);
+  });
+
   it("places relative to another element and avoids overlaps", () => {
     const { els } = run([
       { name: "add_shape", input: { id: "a", kind: "rectangle", label: "A" } },

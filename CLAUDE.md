@@ -19,13 +19,13 @@ Keep entries short and factual; fix or delete anything that is now wrong rather 
 
 **voice-board**: a whiteboard that draws from natural-language commands. A small, fast LLM ("System 1") turns each command into **typed board actions** (`add_shape`, `add_arrow`, `move_element`, ...). The server streams them over SSE; the browser validates and applies them to an [Excalidraw](https://github.com/excalidraw/excalidraw) canvas as they arrive.
 
-**Status: milestone 1 of 5** (typed text commands only), plus an optional local fast path (fine-tuned Laya sidecar, early M4 work). Voice input (Deepgram streaming, VAD, push-to-talk) is M2; diagram generation/images M3; noise/intent filtering and a fine-tuned router M4; persistence/auth/export M5. Roadmap, rationale and licence notes are in [docs/PLAN.md](docs/PLAN.md) (a planning doc, partly unverified; not a spec of current code).
+**Status: milestone 1 of 5** (typed text commands only), plus an optional local fast path (fine-tuned Laya sidecar, early M4 work) and built-in clip-art objects (`add_object`, early M3 work). Voice input (Deepgram streaming, VAD, push-to-talk) is M2; diagram generation/images M3; noise/intent filtering and a fine-tuned router M4; persistence/auth/export M5. Roadmap, rationale and licence notes are in [docs/PLAN.md](docs/PLAN.md) (a planning doc, partly unverified; not a spec of current code).
 
 ## Stack
 
 - npm workspaces monorepo (`shared`, `server`, `web`), TypeScript (strict, ESM, `moduleResolution: Bundler`), Node 22+.
 - **server**: Fastify 5, `@anthropic-ai/sdk`, `openai`, zod 4. Run with `tsx`.
-- **web**: React 18, Vite, `@excalidraw/excalidraw` 0.18, lucide-react. Tests: vitest + jsdom.
+- **web**: React 18, Vite, `@excalidraw/excalidraw` 0.18, lucide-react, `@iconify-json/fluent-emoji-flat` (dev, clip-art source). Tests: vitest + jsdom.
 - **shared**: zod schemas + protocol types, consumed as TS source (`main`/`types` point at `src/index.ts`; no build step).
 - Prettier: `printWidth: 140`.
 
@@ -38,7 +38,8 @@ Keep entries short and factual; fix or delete anything that is now wrong rather 
 | `npm test` | vitest in `server` and `web` (`shared` has no tests) |
 | `npm run typecheck` | `tsc --noEmit` in every workspace |
 | `npm run format` / `format:check` | Prettier over `{shared,server,web}/src` |
-| `npm run build --workspace web` | Production web build (prebuild copies fonts) |
+| `npm run build --workspace web` | Production web build (prebuild copies fonts and writes object SVGs) |
+| `npm run objects --workspace web` | Regenerate `web/public/objects/` from `shared/objects.json` (also runs on predev/prebuild) |
 | `npm run start --workspace server` | Run server without watch |
 
 Single test file: `npx vitest run <path>` from inside `server/` or `web/`.
@@ -63,14 +64,16 @@ web: streamCommand parses SSE -> consume() -> executor.applyAction -> api.update
 - **SSE events** (`shared/src/protocol.ts` `CommandEvent`): `route {source: local|cloud, model, detail, ms}` (always first: who decided and why; shown as the Local/Cloud badge in the activity panel), `action {action, ms}`, `say {text}`, `invalid {name, error}`, `error {message}`, `done {ms, model, actions}`.
 - **Barge-in**: a new command aborts the in-flight fetch; the server aborts the model call on `res` close. Cancelled runs are marked `cancelled`.
 - **Scene summary** (`web/src/board/summary.ts` -> `server/src/prompt.ts#formatScene`): compact text of ids, labels, positions, colour, selection, `recentIds` (newest first) so "it"/"that"/"the database" resolve. Capped at 500 elements / 100 selected / 50 recent by the server's body schema.
+- **Objects / clip-art**: `shared/objects.json` (hand-curated: object name -> Fluent Emoji Flat icon name + aliases) is the catalog. Its keys are the `add_object` enum (adds ~1k tokens to the cached tool prefix); the aliases are only used by the sidecar's `draws_object` guard. `web/scripts/build-objects.mjs` (`npm run objects --workspace web`, also run on predev/prebuild after the font copy) reads the `@iconify-json/fluent-emoji-flat` devDependency of `web` (pinned exactly, MIT) and rewrites `web/public/objects/<name-with-dashes>.svg` + `LICENSE.md`. That folder is gitignored like `web/public/fonts/`: offline once installed, and it can't drift from the catalog. Tests don't need it. An object is an Excalidraw `image` element with `fileId: "object:<name>"` (shared by every copy) and `customData {kind: "object", object}`; `labelOf` returns the object name, so the summary shows `image "tree"` and refs by name resolve. The executor never touches files: `loadObjectFiles(api)` (`web/src/board/objects.ts`) fetches missing ones, rasterizes them to 512px PNG and `addFiles` them, called after each `add_object` and once on load (localStorage keeps only elements). `update_element` on an object only resizes (`OBJECT_SIZES` 64/120/200, centre kept); colour/label throw `ActionError`.
 - **Prompt caching**: `SYSTEM_PROMPT` must stay byte-stable across requests (Anthropic path caches system + tools; the last tool carries `cache_control`). Don't interpolate per-request data into it; per-request data goes in `buildUserMessage`.
 - **Providers** (`server/src/provider.ts`): `Provider { name, model, hasKey, run, describeError }`. `providerFromEnv()` picks the backend. `system1.ts` (Anthropic: `messages.stream`, `eager_input_streaming`, `contentBlock` events) and `system1-openai.ts` (OpenAI: chat completions streaming; tool-call deltas stitched per `index`, flushed when the next call starts or the stream ends). `OPENAI_TOOLS` is derived from the Anthropic `TOOLS`, so both share one schema.
-- **Local fast path** (optional, `server/src/fastpath.ts` + `fastpath/`): `withFastPath(provider, fast)` wraps a provider (sets `fastPath: true`, reported by `/api/health`). It POSTs `{text, scene}` to the Python sidecar; `fast` actions are re-validated with `parseAction` and streamed (`done.model` = `laya:<checkpoint>`), `ignore` ends with 0 actions, and `llm`, a sidecar error/timeout or any invalid action falls through to the provider. Without a fast path, `app.ts` emits `route {source: "cloud"}` itself. The sidecar (`fastpath/server.py`, stdlib HTTP, one model behind a lock) runs Laya, then `resolve_target` and `route_why` from `fastpath/decide.py`, the same decision code the eval harness uses.
+- **Local fast path** (optional, `server/src/fastpath.ts` + `fastpath/`): `withFastPath(provider, fast)` wraps a provider (sets `fastPath: true`, reported by `/api/health`). It POSTs `{text, scene}` to the Python sidecar; `fast` actions are re-validated with `parseAction` and streamed (`done.model` = `laya:<checkpoint>`), `ignore` ends with 0 actions, and `llm`, a sidecar error/timeout or any invalid action falls through to the provider. Without a fast path, `app.ts` emits `route {source: "cloud"}` itself. The sidecar (`fastpath/server.py`, stdlib HTTP, one model behind a lock) runs Laya, then `resolve_target` and `route_why` from `fastpath/decide.py`, the same decision code the eval harness uses. Laya has no add_object answer, so objects are handled in code: `object_command` matches a narrow pattern ([fillers] verb [me] [a/an/one/another] [size] <one object> [here/please/on the board]). With a clear verb (draw/add/put/place/insert/sketch) the sidecar answers `fast` before calling Laya; with a casual verb (grab/get/have/bring/want/need/show) it goes fast only if Laya's `on_board` is true at the threshold ("let's grab a coffee" may be chatter), else LLM (`route_object`). Any other command naming a catalog object/alias (`draws_object`) goes to the LLM unless it was routed fast as an edit (update/move/delete/undo/clear). An import-time assert keeps object names/aliases off shape words (box, circle, note...).
 
 ## Layout and key files
 
 ```
-shared/src/actions.ts     Action zod schemas, ACTION_SCHEMAS/DESCRIPTIONS, BoardAction type, parseAction()
+shared/src/actions.ts     Action zod schemas, ACTION_SCHEMAS/DESCRIPTIONS, BoardAction type, parseAction(), OBJECT_NAMES
+shared/objects.json       Clip-art catalog: object name -> {icon (Fluent Emoji Flat name), aliases}
 shared/src/protocol.ts    CommandRequest, SceneSummary, CommandEvent
 server/src/index.ts       Entry: providerFromEnv() -> buildApp() -> listen 0.0.0.0:$PORT
 server/src/app.ts         Fastify app: GET /api/health, POST /api/command (SSE via reply.hijack())
@@ -86,12 +89,15 @@ web/src/board/executor.ts applyAction(): pure scene mutation per action; resolve
 web/src/board/geometry.ts Placement math: besides, regionPoint, findFreeSpot, connector/edgePoint, GAP
 web/src/board/style.ts    PALETTE (named colours), sizes, NUDGE, fitLabel, FONT (Nunito), ROUGHNESS 0
 web/src/board/summary.ts  summarize() scene -> SceneSummary, visibleArea()
+web/src/board/objects.ts  Clip-art: OBJECT_SIZES, objectFileId/objectOf, loadObjectFiles (fetch SVG -> PNG -> api.addFiles)
+web/public/objects/       Generated clip-art SVGs + LICENSE.md (gitignored); written by web/scripts/build-objects.mjs on predev/prebuild
 web/src/board/useCommandRunner.ts  Streams events, applies actions, undo history, log, revealIfHidden zoom/scroll
 web/src/components/       CommandDock (input, suggestions, `/` hotkey), ActivityPanel (collapsible right-side log, newest first; open state in localStorage `voice-board:activity-open`), StatusPill
 web/src/board/executor.test.ts  Executor tests; web/src/test-setup.ts stubs canvas/FontFace for jsdom
 web/scripts/copy-fonts.mjs  Copies Excalidraw fonts to web/public/fonts (gitignored) on predev/prebuild
 fastpath/decide.py        Decision logic shared by sidecar and eval: questions, target/group rules, route/route_why, compose
 fastpath/server.py        Laya sidecar: POST /decide, GET /health; id aliasing, keep-warm
+fastpath/test_decide.py   stdlib unittest for the code-only object rules (`python -m unittest fastpath.test_decide`, no Laya)
 eval/                     Python harness (not part of the app) testing self-hosted decision models as a System 1 fast path; make_train.py + train_laya.py fine-tune Laya
 ```
 
@@ -129,9 +135,9 @@ eval/                     Python harness (not part of the app) testing self-host
   - Gotchas: laya 0.4.0's `finetune` scores the base model before moving it to CUDA and crashes; `train_laya.py` moves it at load. Full fine-tuning (Laya's own recipe: all layers, 4 epochs) needs ~7 GB, so on 4 GB train the top 6 layers (3.3 GB, ~0.5-0.7 s/step at micro-batch 8, 70-85 min per epoch; the laptop GPU throttles).
   - Top-6, 1 epoch at 0.6 still applies "rename all the notes to done" as delete-all (sets) and misses needs_text on "add a sticky note saying X" (dev). At 0.8 it applied 0 wrong on all three sets. The templates were written after seeing dev and held-out failures (e.g. "X, sorry, I mean Y"), so both sets are optimistic for the fine-tuned models; a fresh test set is needed.
 
-### Action vocabulary (8 actions)
+### Action vocabulary (9 actions)
 
-`add_shape` (rectangle/ellipse/diamond/sticky), `add_text` (title/heading/body/caption), `add_arrow`, `move_element`, `update_element`, `delete_elements`, `undo_last_command`, `clear_board`. Placement is semantic (`relative_to`+`side`, `region`, or absolute `x`/`y`) rather than raw coordinates because LLM spatial reasoning is weak.
+`add_shape` (rectangle/ellipse/diamond/sticky), `add_object` (clip-art from `shared/objects.json`, small/medium/large), `add_text` (title/heading/body/caption), `add_arrow`, `move_element`, `update_element`, `delete_elements`, `undo_last_command`, `clear_board`. Placement is semantic (`relative_to`+`side`, `region`, or absolute `x`/`y`) rather than raw coordinates because LLM spatial reasoning is weak.
 
 **Adding or changing an action touches:** `shared/src/actions.ts` (schema + description) -> `web/src/board/executor.ts` (`applyAction` switch) -> `server/src/prompt.ts` if the model needs guidance -> tests (`server.test.ts` asserts the exact ordered tool-name list; executor tests) -> this file.
 
@@ -150,11 +156,12 @@ eval/                     Python harness (not part of the app) testing self-host
 - `StatusPill` exports `modelName()`: friendly names for Anthropic ids (`MODEL_NAMES`) and `laya:*` ("Laya"); other models, including OpenAI ones, show their raw id.
 - Fast-path sidecar gotchas: Excalidraw ids are random 20-char strings Laya never saw, so `/decide` aliases them to `e1, e2, ...` and maps actions back. With more than 10 elements the target question is dropped (Laya's head budget) and only the code rules pick targets. A laptop GPU clocks down when idle: a decision takes ~0.2 s back to back but ~0.4 s after a pause and 1.3 s after minutes idle; `FASTPATH_KEEP_WARM_S` removes the 1.3 s case. A command over 30 words skips the model (`llm`).
 - Root `dev` script uses `a & b`. On Windows npm runs scripts through `cmd.exe`, where `&` is sequential, so if the web app doesn't start run `npm run dev --workspace server` and `npm run dev --workspace web` in separate terminals. (Not verified on this machine.)
+- Excalidraw renders SVG images colour-inverted in dark mode (it resets the filter only for non-SVG), hence the PNG rasterizing in `objects.ts`. Emoji sets have no full-body child: `man`/`woman`/`person` are standing figures, `child`/`boy`/`girl`/`baby` are faces (`man face`/`woman face` exist too). Aliases that clash with diagram words (box, user, notes, database...) were left out on purpose.
 - Server tests never hit a real API: they pass fake SDK clients into `anthropicProvider`/`openaiProvider`.
 
 ## Testing notes
 
-- `server/src/server.test.ts`: fake Anthropic `messages.stream` and fake OpenAI async-iterable stream; drives `app.inject` and parses the SSE body. Fast-path tests use fake `FastPath` functions plus a throwaway Fastify app as the HTTP sidecar. The Python sidecar has no automated tests; `eval/laya_eval.py` exercises its decision code.
+- `server/src/server.test.ts`: fake Anthropic `messages.stream` and fake OpenAI async-iterable stream; drives `app.inject` and parses the SSE body. Fast-path tests use fake `FastPath` functions plus a throwaway Fastify app as the HTTP sidecar. The Python sidecar's object rules have `fastpath/test_decide.py` (run from the repo root); the rest of its decision code is exercised by `eval/laya_eval.py`.
 - `web/src/board/executor.test.ts`: runs action sequences through `applyAction` and asserts on resulting Excalidraw elements.
 - No tests yet for `useCommandRunner`, `App`, `CommandDock`, `ActivityPanel`, `api.ts` or `geometry.ts` directly.
 - After changes run `npm run typecheck && npm test`.

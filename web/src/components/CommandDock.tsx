@@ -4,7 +4,7 @@ import { ArrowUp, Sparkles, Square } from "lucide-react";
 const SUGGESTIONS = [
   "Draw a login flow: user, web app, auth service, database",
   "Add a sticky note that says ship by Friday",
-  "Title: Q3 architecture review",
+  "Draw a house with a tree and a child next to it",
   "Make the database green and move it down",
 ];
 

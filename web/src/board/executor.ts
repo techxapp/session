@@ -3,6 +3,7 @@ import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/tran
 import type { ExcalidrawElement, ExcalidrawLinearElement } from "@excalidraw/excalidraw/element/types";
 import type { BoardAction, Placement, Side } from "@board/shared";
 import { type Box, besides, connector, findFreeSpot, regionPoint } from "./geometry";
+import { OBJECT_SIZES, objectFileId, objectOf } from "./objects";
 import { FONT, NUDGE, PALETTE, ROUGHNESS, SHAPE_SIZES, TEXT_SIZES, fitLabel } from "./style";
 
 type El = ExcalidrawElement;
@@ -29,8 +30,10 @@ export class ActionError extends Error {}
 export const isTopLevel = (e: El) => !e.isDeleted && !(e.type === "text" && e.containerId);
 export const boxOf = (e: El): Box => ({ x: e.x, y: e.y, w: e.width, h: e.height });
 
+/** An element's text: its own (text), its bound label (shapes, arrows), or the object it draws (clip-art). */
 export function labelOf(elements: readonly El[], el: El): string | undefined {
   if (el.type === "text") return el.originalText ?? el.text;
+  if (el.type === "image") return objectOf(el);
   const bound = elements.find((t) => t.type === "text" && !t.isDeleted && t.containerId === el.id);
   return bound && bound.type === "text" ? (bound.originalText ?? bound.text) : undefined;
 }
@@ -43,6 +46,8 @@ export function applyAction(elements: readonly El[], action: BoardAction, ctx: E
   switch (action.name) {
     case "add_shape":
       return addShape(elements, action.input, ctx);
+    case "add_object":
+      return addObject(elements, action.input, ctx);
     case "add_text":
       return addText(elements, action.input, ctx);
     case "add_arrow":
@@ -146,6 +151,31 @@ function addShape(elements: readonly El[], input: Extract<BoardAction, { name: "
     ...(input.label ? { label: { text: input.label, fontSize: 20, fontFamily: FONT } } : {}),
   } as ExcalidrawElementSkeleton;
   const created = convertToExcalidrawElements([skeleton], { regenerateIds: false });
+  touch(ctx, id);
+  return { elements: [...elements, ...created], touched: [id] };
+}
+
+function addObject(elements: readonly El[], input: Extract<BoardAction, { name: "add_object" }>["input"], ctx: ExecContext): ExecResult {
+  const side = OBJECT_SIZES[input.size ?? "medium"];
+  const pos = place(elements, input.placement, side, side, ctx);
+  const id = allocateId(elements, input.id, ctx);
+  // The image file itself is added by loadObjectFiles; until then Excalidraw shows a placeholder.
+  const created = convertToExcalidrawElements(
+    [
+      {
+        type: "image",
+        id,
+        x: pos.x,
+        y: pos.y,
+        width: side,
+        height: side,
+        fileId: objectFileId(input.object),
+        status: "saved",
+        customData: { kind: "object", object: input.object },
+      },
+    ],
+    { regenerateIds: false },
+  );
   touch(ctx, id);
   return { elements: [...elements, ...created], touched: [id] };
 }
@@ -325,6 +355,18 @@ function updateElement(
     });
     if (target.type === "arrow" && input.label) next = relabelArrow(next, target, input.label);
     return { elements: next, touched: [target.id] };
+  }
+
+  // Pictures: only the size can change (keeping the centre fixed).
+  if (target.type === "image") {
+    const factor = input.scale ?? (input.size ? OBJECT_SIZES[input.size] / Math.max(target.width, target.height) : undefined);
+    if (!factor) throw new ActionError("A picture's colour and text can't be changed; add a label next to it instead.");
+    const w = target.width * factor;
+    const h = target.height * factor;
+    const next = elements.map((e) =>
+      e.id === target.id ? newElementWith(e, { x: e.x + (e.width - w) / 2, y: e.y + (e.height - h) / 2, width: w, height: h }) : e,
+    );
+    return { elements: rerouteArrows(next, new Set([target.id])), touched: [target.id] };
   }
 
   // Shapes: rebuild (keeps id, position, z-order and arrow bindings) so the label re-wraps correctly.

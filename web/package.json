@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "fonts": "node scripts/copy-fonts.mjs",
-    "predev": "npm run fonts",
-    "prebuild": "npm run fonts",
+    "objects": "node scripts/build-objects.mjs",
+    "predev": "npm run fonts && npm run objects",
+    "prebuild": "npm run fonts && npm run objects",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -21,6 +22,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@iconify-json/fluent-emoji-flat": "1.2.6",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.1.2",

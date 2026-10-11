@@ -5,6 +5,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { CommandEvent, CommandSource } from "@board/shared";
 import { streamCommand } from "../api";
 import { ActionError, applyAction, isTopLevel } from "./executor";
+import { loadObjectFiles } from "./objects";
 import { summarize, visibleArea } from "./summary";
 
 export type EntryStatus = "running" | "done" | "error" | "ignored" | "cancelled";
@@ -89,6 +90,7 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null) {
             try {
               const res = applyAction(api.getSceneElementsIncludingDeleted(), ev.action, ctx);
               api.updateScene({ elements: res.elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+              if (ev.action.name === "add_object") void loadObjectFiles(api);
               touched.push(...res.touched);
               applied++;
               update(id, (e) => ({ ...e, actions: applied, firstMs: e.firstMs ?? ev.ms }));
