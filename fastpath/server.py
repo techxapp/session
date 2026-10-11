@@ -32,6 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastpath.decide import (  # noqa: E402
     build_questions,
     draws_object,
+    has_measurement,
+    measure_command,
     object_command,
     parse_answers,
     resolve_target,
@@ -155,6 +157,11 @@ class FastPath:
                 self.wake()
         if len(words(text)) > MAX_WORDS:
             return {"route": "llm", "actions": None, "reason": "long command", "model": self.name, "ms": 0}
+        if has_measurement(text):  # built in code or left to the LLM; Laya has no add_dimension
+            measured = measure_command(text, scene)
+            decision, actions, why = ("fast", *measured) if measured else ("llm", None, "measurement needs the LLM")
+            return {"route": decision, "actions": actions, "reason": why, "model": self.name, "answers": {},
+                    "target_rule": None, "ms": round((time.perf_counter() - t) * 1000, 1)}  # fmt: skip
         obj = object_command(text)
         if obj and not obj["casual"]:  # "draw a tree": nothing for the model to decide
             decision, actions, why = route_object(obj, None, self.threshold)

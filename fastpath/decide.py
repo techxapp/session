@@ -175,6 +175,16 @@ OBJECT_WORDS = dict(sorted(((w, n) for n, o in _CATALOG.items() for w in (n, *o[
 EDIT_ACTIONS = SET_ACTIONS | {"undo_last_command", "clear_board"}
 
 
+# "10 ft", "20 meters", "5'": a measurement, drawn with add_dimension (`measure_command`). Laya has no such action.
+# No bare "in": "10 in height" is not inches.
+UNITS = r"ft|feet|foot|m|meters?|metres?|cm|mm|km|inch(?:es)?|yards?|yd|miles?"
+MEASUREMENT = re.compile(rf"\b(\d+(?:\.\d+)?)\s*(?:({UNITS})\b|')", re.I)
+
+
+def has_measurement(text: str) -> bool:
+    return bool(MEASUREMENT.search(text))
+
+
 def draws_object(text: str, decision: str, actions: list[dict] | None) -> str | None:
     """The object a command may want drawn ("let's grab a tree"), unless it was routed fast as an edit.
 
@@ -202,14 +212,8 @@ OBJECT_SUFFIX = {"please", "here", "there", "too", "now", "for", "me", "on", "th
 assert not set(OBJECT_WORDS) & (set(KIND_WORDS) | set(PLURAL_KIND_WORDS)), "an object name/alias is a shape word"
 
 
-def object_command(text: str) -> dict | None:
-    """{object, size, casual} for a command that only asks to draw one catalog object, else None.
-
-    Shape: [fillers/politeness] verb [me] [a|an|one|another] [size] <object> [here|please|on the board...],
-    e.g. "draw a tree", "let's grab a big tree", "can you add a kid please". `casual` marks verbs that may
-    be chatter; the caller still needs the decision model to agree it's a board command.
-    """
-    said = words(text)
+def draw_parts(said: list[str]) -> tuple[bool, str | None, list[str]] | None:
+    """(casual, size, rest) for [fillers/politeness] verb [me] [a|an|one|another] [size] <rest>, else None."""
     i = 0
     while i < len(said) and said[i] in OBJECT_PREFIX:
         i += 1
@@ -225,13 +229,32 @@ def object_command(text: str) -> dict | None:
     if i < len(said) and said[i] in OBJECT_SIZES:
         size = OBJECT_SIZES[said[i]]
         i += 1
-    rest = said[i:]
-    # Longest catalog phrase at this point; plurals ("two trees") don't match and go to the LLM.
-    for phrase, name in OBJECT_WORDS.items():
+    return casual, size, said[i:]
+
+
+def match_phrase(rest: list[str], table: dict[str, str], allowed_after: set[str]) -> str | None:
+    """table[phrase] for the longest table phrase starting `rest` when only `allowed_after` words follow it."""
+    for phrase, name in table.items():
         n = len(phrase.split())
-        if " ".join(rest[:n]) == phrase and all(w in OBJECT_SUFFIX for w in rest[n:]):
-            return {"object": name, "size": size, "casual": casual}
+        if " ".join(rest[:n]) == phrase and all(w in allowed_after for w in rest[n:]):
+            return name
     return None
+
+
+def object_command(text: str) -> dict | None:
+    """{object, size, casual} for a command that only asks to draw one catalog object, else None.
+
+    Shape: [fillers/politeness] verb [me] [a|an|one|another] [size] <object> [here|please|on the board...],
+    e.g. "draw a tree", "let's grab a big tree", "can you add a kid please". `casual` marks verbs that may
+    be chatter; the caller still needs the decision model to agree it's a board command.
+    """
+    parts = draw_parts(words(text))
+    if not parts:
+        return None
+    casual, size, rest = parts
+    # Plurals ("two trees") don't match and go to the LLM.
+    name = match_phrase(rest, OBJECT_WORDS, OBJECT_SUFFIX)
+    return {"object": name, "size": size, "casual": casual} if name else None
 
 
 def object_action(cmd: dict) -> dict:
@@ -307,6 +330,116 @@ def resolve_target(text: str, scene: dict) -> tuple[str | list[str], str] | None
         if not scene["selectedIds"] and scene["recentIds"]:
             return scene["recentIds"][0], "pronoun"
     return None
+
+
+# Measurement commands, built in code without Laya (`measure_command`).
+HEIGHT_WORDS = {"height", "tall", "high"}
+WIDTH_WORDS = {"width", "wide", "long", "length"}
+# Glue around the measurement in "a tree of height 10 ft" / "a 10 ft tall tree" / "a tree that is 10 ft in height".
+MEASURE_GLUE = {"of", "is", "that", "which", "with", "about", "around", "roughly", "approximately", "exactly", "in"}
+SHAPE_WORDS = {w: k for w, k in KIND_WORDS.items() if k != "text"}
+SECOND_CLAUSE = {"and", "then", "also", "plus", "but", "except"}
+SPEAKER_WORDS = {"i", "my", "we", "our", "your"}
+# A resize or a move, not a label: "make the box 5 m wide", "move it 10 ft left", "grow it by 2 m".
+CHANGE_WORDS = {"make", "resize", "set", "scale", "change", "grow", "shrink", "stretch", "increase", "decrease", "move",
+                "raise", "lower", "by", "to", "more", "taller", "shorter", "wider", "higher", "bigger", "smaller"}  # fmt: skip
+# "the distance between them", "the 2 objects are 20 ft apart": the two selected elements, else the two most recent.
+PAIR_WORDS = {"them", "they", "these", "those", "both", "two", "2", "objects", "things", "elements", "shapes", "the"}
+DISTANCE_CUT = {"is", "are", "was", "be", "as", "should"}
+DISTANCE_TAIL = {"apart", "away", "exactly", "about", "around", "roughly", "approximately", "please", "now", "of"}
+
+
+def measure_command(text: str, scene: dict) -> tuple[list[dict], str] | None:
+    """Board actions for a simple measurement command, else None (the LLM decides).
+
+    - New thing: [fillers] draw-verb [a] [size] <object|shape> + measurement, e.g. "draw a tree of height 10 ft",
+      "add a 5 m wide box" -> add it, then add_dimension on it.
+    - One element: "the tree is 10 ft tall", "height of the house is 30 ft" -> add_dimension(target).
+      Needs a height/width word and a target `resolve_target` picks; resizes ("make it 5 m wide") are left out.
+    - Two elements: "distance between X and Y is 20 ft", "X and Y are 20 ft apart", "X is 20 ft from Y",
+      "between them" (two selected, else two most recent) -> add_dimension(from, to).
+    Anything with a second measurement, a second clause, the speaker ("I walked 20 ft") or a reference that
+    doesn't resolve to exactly one element returns None.
+    """
+    found = list(MEASUREMENT.finditer(text))
+    if len(found) != 1:
+        return None
+    m = found[0]
+    label = f"{m[1]} {(m[2] or 'ft').lower()}"
+    said = words(text[: m.start()] + " " + text[m.end() :])
+    present = set(said)
+    if SPEAKER_WORDS & present or HEIGHT_WORDS & present and WIDTH_WORDS & present:
+        return None
+    axis = {"axis": "width"} if WIDTH_WORDS & present else {}
+
+    def dimension(**inp) -> dict:
+        return {"name": "add_dimension", "input": {**inp, "label": label}}
+
+    def one(phrase: list[str]) -> str | None:
+        hit = resolve_target(" ".join(phrase), scene) if phrase else None
+        return hit[0] if hit and isinstance(hit[0], str) and hit[0] != SEVERAL else None
+
+    def pair(phrase: list[str]) -> tuple[str, str] | None:
+        if phrase and set(phrase) <= PAIR_WORDS:
+            ids = {el["id"] for el in scene["elements"] if el["type"] != "arrow"}
+            sel = [i for i in scene["selectedIds"] if i in ids]
+            chosen = sel if sel else [i for i in scene["recentIds"] if i in ids][:2]
+            return (chosen[0], chosen[1]) if len(chosen) == 2 else None
+        hit = resolve_target(" ".join(phrase), scene)
+        if hit and isinstance(hit[0], list) and len(hit[0]) == 2:  # "both boxes"
+            return hit[0][0], hit[0][1]
+        if phrase.count("and") != 1:
+            return None
+        cut = phrase.index("and")
+        a, b = one(phrase[:cut]), one(phrase[cut + 1 :])
+        return (a, b) if a and b and a != b else None
+
+    def distance() -> tuple[list[dict], str] | None:
+        if "between" in said:
+            at = said.index("between")
+            before, phrase = said[:at], said[at + 1 :]
+            cut = next((i for i, w in enumerate(phrase) if w in DISTANCE_CUT), len(phrase))
+            phrase, tail = phrase[:cut], phrase[cut + 1 :]
+        elif "apart" in said:
+            at = said.index("apart")
+            before, phrase, tail = [], said[:at], said[at + 1 :]
+            while phrase and phrase[-1] in DISTANCE_CUT | {"placed", "standing", "stand"}:
+                phrase = phrase[:-1]
+        elif "from" in said and DISTANCE_CUT & set(said[: said.index("from")]):
+            at = said.index("from")
+            cut = next(i for i, w in enumerate(said) if w in DISTANCE_CUT)
+            if set(said[cut + 1 : at]) - DISTANCE_TAIL:
+                return None
+            a, b = one(said[:cut]), one(said[at + 1 :])
+            return ([dimension(**{"from": a, "to": b})], "distance") if a and b and a != b else None
+        else:
+            return None
+        if set(tail) - DISTANCE_TAIL or (SECOND_CLAUSE | CHANGE_WORDS) & set(before):
+            return None
+        ends = pair(phrase)
+        return ([dimension(**{"from": ends[0], "to": ends[1]})], "distance") if ends else None
+
+    parts = draw_parts(said)
+    if parts:  # "draw a tree of height 10 ft"
+        casual, size, rest = parts
+        while rest and rest[0] in MEASURE_GLUE | HEIGHT_WORDS | WIDTH_WORDS:  # "a 10 ft tall tree"
+            rest = rest[1:]
+        after = MEASURE_GLUE | HEIGHT_WORDS | WIDTH_WORDS | OBJECT_SUFFIX
+        if not casual and (name := match_phrase(rest, OBJECT_WORDS, after)):
+            add = object_action({"object": name, "size": size})
+        elif not casual and (kind := match_phrase(rest, SHAPE_WORDS, after)):
+            add = {"name": "add_shape", "input": {"id": rest[0], "kind": kind, **({"size": size} if size else {})}}
+        else:  # "add a line between the man and the tree, 20 ft"
+            return distance()
+        what = add["input"].get("object") or add["input"]["kind"]
+        return [add, dimension(target=add["input"]["id"], **axis)], f"{what} with a {axis.get('axis', 'height')} line"
+
+    if {"between", "apart", "from"} & present:
+        return distance()
+    if not (HEIGHT_WORDS | WIDTH_WORDS) & present or (SECOND_CLAUSE | CHANGE_WORDS) & present:
+        return None
+    target = one(said)  # "the tree is 10 ft tall"
+    return ([dimension(target=target, **axis)], f"{axis.get('axis', 'height')} line") if target else None
 
 
 def parse_answers(raw: dict) -> dict:

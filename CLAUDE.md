@@ -17,7 +17,7 @@ Keep entries short and factual; fix or delete anything that is now wrong rather 
 
 ## What this is
 
-**voice-board**: a whiteboard that draws from natural-language commands. A small, fast LLM ("System 1") turns each command into **typed board actions** (`add_shape`, `add_arrow`, `move_element`, ...). The server streams them over SSE; the browser validates and applies them to an [Excalidraw](https://github.com/excalidraw/excalidraw) canvas as they arrive.
+**voice-board**: a whiteboard that draws from natural-language commands. A small, fast LLM ("System 1") turns each command into **typed board actions** (`add_shape`, `add_arrow`, `add_dimension` (measurement line + label like "10 ft": `target` = vertical line beside an element's height, or `axis: "width"`; or `from`+`to` = horizontal line across the gap, vertical if stacked; unbound arrow with bar ends, `customData.kind: "dimension"`, so it does not follow moved shapes), `move_element`, ...). The server streams them over SSE; the browser validates and applies them to an [Excalidraw](https://github.com/excalidraw/excalidraw) canvas as they arrive.
 
 **Status: milestone 1 of 5** (typed text commands only), plus an optional local fast path (fine-tuned Laya sidecar, early M4 work) and built-in clip-art objects (`add_object`, early M3 work). Voice input (Deepgram streaming, VAD, push-to-talk) is M2; diagram generation/images M3; noise/intent filtering and a fine-tuned router M4; persistence/auth/export M5. Roadmap, rationale and licence notes are in [docs/PLAN.md](docs/PLAN.md) (a planning doc, partly unverified; not a spec of current code).
 
@@ -97,7 +97,7 @@ web/src/board/executor.test.ts  Executor tests; web/src/test-setup.ts stubs canv
 web/scripts/copy-fonts.mjs  Copies Excalidraw fonts to web/public/fonts (gitignored) on predev/prebuild
 fastpath/decide.py        Decision logic shared by sidecar and eval: questions, target/group rules, route/route_why, compose
 fastpath/server.py        Laya sidecar: POST /decide, GET /health; id aliasing, keep-warm
-fastpath/test_decide.py   stdlib unittest for the code-only object rules (`python -m unittest fastpath.test_decide`, no Laya)
+fastpath/test_decide.py   stdlib unittest for the code-only object and measurement rules (`python -m unittest fastpath.test_decide`, no Laya)
 eval/                     Python harness (not part of the app) testing self-hosted decision models as a System 1 fast path; make_train.py + train_laya.py fine-tune Laya
 ```
 
@@ -135,7 +135,7 @@ eval/                     Python harness (not part of the app) testing self-host
   - Gotchas: laya 0.4.0's `finetune` scores the base model before moving it to CUDA and crashes; `train_laya.py` moves it at load. Full fine-tuning (Laya's own recipe: all layers, 4 epochs) needs ~7 GB, so on 4 GB train the top 6 layers (3.3 GB, ~0.5-0.7 s/step at micro-batch 8, 70-85 min per epoch; the laptop GPU throttles).
   - Top-6, 1 epoch at 0.6 still applies "rename all the notes to done" as delete-all (sets) and misses needs_text on "add a sticky note saying X" (dev). At 0.8 it applied 0 wrong on all three sets. The templates were written after seeing dev and held-out failures (e.g. "X, sorry, I mean Y"), so both sets are optimistic for the fine-tuned models; a fresh test set is needed.
 
-### Action vocabulary (9 actions)
+### Action vocabulary (10 actions)
 
 `add_shape` (rectangle/ellipse/diamond/sticky), `add_object` (clip-art from `shared/objects.json`, small/medium/large), `add_text` (title/heading/body/caption), `add_arrow`, `move_element`, `update_element`, `delete_elements`, `undo_last_command`, `clear_board`. Placement is semantic (`relative_to`+`side`, `region`, or absolute `x`/`y`) rather than raw coordinates because LLM spatial reasoning is weak.
 
@@ -154,14 +154,14 @@ eval/                     Python harness (not part of the app) testing self-host
 - Board autosaves to `localStorage` key `voice-board:scene:v1` (400ms debounce).
 - **Dev-only hook**: `window.__board.apply(text, actions)` runs actions through the same path as the model, so UI can be exercised without an API key.
 - `StatusPill` exports `modelName()`: friendly names for Anthropic ids (`MODEL_NAMES`) and `laya:*` ("Laya"); other models, including OpenAI ones, show their raw id.
-- Fast-path sidecar gotchas: Excalidraw ids are random 20-char strings Laya never saw, so `/decide` aliases them to `e1, e2, ...` and maps actions back. With more than 10 elements the target question is dropped (Laya's head budget) and only the code rules pick targets. A laptop GPU clocks down when idle: a decision takes ~0.2 s back to back but ~0.4 s after a pause and 1.3 s after minutes idle; `FASTPATH_KEEP_WARM_S` removes the 1.3 s case. After `FASTPATH_IDLE_UNLOAD_S` (15 min) with no `/decide` request the housekeeping thread unloads the model (`router.unload`, frees VRAM, stops keep-warm); the next request starts a background reload and is answered `llm` ("fast path waking up"), later ones are fast again. Non-casual object commands never need the model so they still go fast while asleep. `/health` reports `awake`. A command over 30 words skips the model (`llm`).
+- Fast-path sidecar gotchas: Excalidraw ids are random 20-char strings Laya never saw, so `/decide` aliases them to `e1, e2, ...` and maps actions back. With more than 10 elements the target question is dropped (Laya's head budget) and only the code rules pick targets. A laptop GPU clocks down when idle: a decision takes ~0.2 s back to back but ~0.4 s after a pause and 1.3 s after minutes idle; `FASTPATH_KEEP_WARM_S` removes the 1.3 s case. After `FASTPATH_IDLE_UNLOAD_S` (15 min) with no `/decide` request the housekeeping thread unloads the model (`router.unload`, frees VRAM, stops keep-warm); the next request starts a background reload and is answered `llm` ("fast path waking up"), later ones are fast again. Non-casual object commands never need the model so they still go fast while asleep. `/health` reports `awake`. A command over 30 words skips the model (`llm`). A command with a measurement (`has_measurement`: "10 ft", "20 meters"; no bare "in") never reaches Laya (it has no add_dimension): `measure_command` builds it in code or it goes to the LLM. It handles draw-verb + one object/shape + measurement (add it, then a height/width line), "the tree is 10 ft tall" (needs a height/width word and a `resolve_target` hit; resize words like make/move/by go to the LLM), and distances ("between X and Y", "X and Y are ... apart", "X is ... from Y", "between them" = two selected, else two most recent). Second measurement, second clause, speaker words (I/my/we) or an unresolved reference -> LLM.
 - Root `dev` script uses `a & b`. On Windows npm runs scripts through `cmd.exe`, where `&` is sequential, so if the web app doesn't start run `npm run dev --workspace server` and `npm run dev --workspace web` in separate terminals. (Not verified on this machine.)
 - Excalidraw renders SVG images colour-inverted in dark mode (it resets the filter only for non-SVG), hence the PNG rasterizing in `objects.ts`. Emoji sets have no full-body child: `man`/`woman`/`person` are standing figures, `child`/`boy`/`girl`/`baby` are faces (`man face`/`woman face` exist too). Aliases that clash with diagram words (box, user, notes, database...) were left out on purpose.
 - Server tests never hit a real API: they pass fake SDK clients into `anthropicProvider`/`openaiProvider`.
 
 ## Testing notes
 
-- `server/src/server.test.ts`: fake Anthropic `messages.stream` and fake OpenAI async-iterable stream; drives `app.inject` and parses the SSE body. Fast-path tests use fake `FastPath` functions plus a throwaway Fastify app as the HTTP sidecar. The Python sidecar's object rules have `fastpath/test_decide.py` (run from the repo root); the rest of its decision code is exercised by `eval/laya_eval.py`.
+- `server/src/server.test.ts`: fake Anthropic `messages.stream` and fake OpenAI async-iterable stream; drives `app.inject` and parses the SSE body. Fast-path tests use fake `FastPath` functions plus a throwaway Fastify app as the HTTP sidecar. The Python sidecar's object and measurement rules have `fastpath/test_decide.py` (run from the repo root); the rest of its decision code is exercised by `eval/laya_eval.py`.
 - `web/src/board/executor.test.ts`: runs action sequences through `applyAction` and asserts on resulting Excalidraw elements.
 - No tests yet for `useCommandRunner`, `App`, `CommandDock`, `ActivityPanel`, `api.ts` or `geometry.ts` directly.
 - After changes run `npm run typecheck && npm test`.

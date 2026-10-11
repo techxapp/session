@@ -52,6 +52,8 @@ export function applyAction(elements: readonly El[], action: BoardAction, ctx: E
       return addText(elements, action.input, ctx);
     case "add_arrow":
       return addArrow(elements, action.input, ctx);
+    case "add_dimension":
+      return addDimension(elements, action.input, ctx);
     case "move_element":
       return moveElement(elements, action.input, ctx);
     case "update_element":
@@ -243,6 +245,80 @@ function addArrow(elements: readonly El[], input: Extract<BoardAction, { name: "
   );
   touch(ctx, id);
   return { elements: [...next, ...created], touched: [id] };
+}
+
+const DIMENSION_OFFSET = 24;
+
+/** Free-standing measurement line (bars at both ends, label on it): beside one element, or across the gap between two. */
+function addDimension(
+  elements: readonly El[],
+  input: Extract<BoardAction, { name: "add_dimension" }>["input"],
+  ctx: ExecContext,
+): ExecResult {
+  let start: { x: number; y: number };
+  let end: { x: number; y: number };
+  if (input.target !== undefined) {
+    const target = resolve(elements, input.target, ctx);
+    if (target.type === "arrow") throw new ActionError("Can't measure an arrow.");
+    const b = boxOf(target);
+    if (input.axis === "width") {
+      const y = b.y + b.h + DIMENSION_OFFSET;
+      start = { x: b.x, y };
+      end = { x: b.x + b.w, y };
+    } else {
+      const x = b.x + b.w + DIMENSION_OFFSET;
+      start = { x: x, y: b.y };
+      end = { x, y: b.y + b.h };
+    }
+  } else {
+    const a = boxOf(resolve(elements, input.from!, ctx));
+    const b = boxOf(resolve(elements, input.to!, ctx));
+    const gapX = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w);
+    const gapY = Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h);
+    if (gapX <= 0 && gapY <= 0) throw new ActionError("Those elements overlap, so there's no gap to measure.");
+    // Line across the larger gap, at the middle of where the two overlap on the other axis (else between their centres).
+    const mid = (lo1: number, hi1: number, lo2: number, hi2: number) =>
+      Math.max(lo1, lo2) < Math.min(hi1, hi2) ? (Math.max(lo1, lo2) + Math.min(hi1, hi2)) / 2 : (lo1 + hi1 + lo2 + hi2) / 4;
+    if (gapX >= gapY) {
+      const y = mid(a.y, a.y + a.h, b.y, b.y + b.h);
+      const left = Math.min(a.x + a.w, b.x + b.w);
+      start = { x: left, y };
+      end = { x: left + gapX, y };
+    } else {
+      const x = mid(a.x, a.x + a.w, b.x, b.x + b.w);
+      const top = Math.min(a.y + a.h, b.y + b.h);
+      start = { x, y: top };
+      end = { x, y: top + gapY };
+    }
+  }
+  const id = allocateId(elements, input.id, ctx);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const created = convertToExcalidrawElements(
+    [
+      {
+        type: "arrow",
+        id,
+        x: start.x,
+        y: start.y,
+        width: Math.abs(dx),
+        height: Math.abs(dy),
+        points: [
+          [0, 0],
+          [dx, dy],
+        ],
+        strokeColor: input.color ? PALETTE[input.color].stroke : "#1e1e1e",
+        startArrowhead: "bar",
+        endArrowhead: "bar",
+        roughness: ROUGHNESS,
+        customData: { kind: "dimension" },
+        label: { text: input.label, fontSize: 16, fontFamily: FONT },
+      } as ExcalidrawElementSkeleton,
+    ],
+    { regenerateIds: false },
+  );
+  touch(ctx, id);
+  return { elements: [...elements, ...created], touched: [id] };
 }
 
 /** Shift elements by (dx,dy) together with their bound labels, then re-route attached arrows. */

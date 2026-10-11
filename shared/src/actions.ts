@@ -79,6 +79,20 @@ export const AddArrow = z.object({
   bidirectional: z.boolean().optional(),
 });
 
+export const AddDimension = z
+  .object({
+    id: NewId.optional(),
+    label: z.string().min(1).max(100).describe("The measurement as the user said it, e.g. '10 ft'."),
+    target: ElementId.optional().describe("Measure this element: a vertical line along its height (or its width)."),
+    axis: z.enum(["height", "width"]).optional().describe("With target. Default 'height'."),
+    from: ElementId.optional().describe("With 'to': measure the gap between these two elements."),
+    to: ElementId.optional(),
+    color: Color.optional(),
+  })
+  .refine((v) => (v.target !== undefined) !== (v.from !== undefined && v.to !== undefined), {
+    message: "Give either target, or both from and to.",
+  });
+
 export const MoveElement = z.object({
   target: ElementId,
   direction: Direction.optional().describe("Nudge in a direction."),
@@ -109,6 +123,7 @@ export const ACTION_SCHEMAS = {
   add_object: AddObject,
   add_text: AddText,
   add_arrow: AddArrow,
+  add_dimension: AddDimension,
   move_element: MoveElement,
   update_element: UpdateElement,
   delete_elements: DeleteElements,
@@ -125,6 +140,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
     "Draw a picture of a real-world thing: a person, animal, plant, weather, food, building, vehicle or everyday object. Not for diagram boxes.",
   add_text: "Write free-standing text on the board (titles, notes, bullet lists).",
   add_arrow: "Connect two elements with an arrow, optionally labelled.",
+  add_dimension:
+    "Draw a measurement line with a label like '10 ft': along one element's height/width (target), or across the gap between two elements (from + to).",
   move_element: "Move an existing element: nudge it in a direction or place it next to something / in a region.",
   update_element: "Change an existing element's text, color or size.",
   delete_elements: "Remove elements (connected arrows are removed too).",

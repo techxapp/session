@@ -56,6 +56,7 @@ describe("tool definitions", () => {
       "add_object",
       "add_text",
       "add_arrow",
+      "add_dimension",
       "move_element",
       "update_element",
       "delete_elements",
