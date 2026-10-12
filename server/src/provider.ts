@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import type { CommandRequest } from "@board/shared";
 import { DEFAULT_ANTHROPIC_MODEL, runSystem1, type Emit } from "./system1";
+import { DEFAULT_EFFORT, effortFromEnv, type ReasoningEffort } from "./effort";
 import { DEFAULT_OPENAI_MODEL, runSystem1OpenAI } from "./system1-openai";
 
 export type ProviderName = "anthropic" | "openai";
@@ -18,12 +19,17 @@ export interface Provider {
   describeError(err: unknown): string | undefined;
 }
 
-export function anthropicProvider(client: Anthropic, model = DEFAULT_ANTHROPIC_MODEL, hasKey = true): Provider {
+export function anthropicProvider(
+  client: Anthropic,
+  model = DEFAULT_ANTHROPIC_MODEL,
+  hasKey = true,
+  effort: ReasoningEffort = DEFAULT_EFFORT,
+): Provider {
   return {
     name: "anthropic",
     model,
     hasKey,
-    run: (req, emit, signal) => runSystem1(client, req, emit, signal, model),
+    run: (req, emit, signal) => runSystem1(client, req, emit, signal, model, effort),
     describeError(err) {
       if (err instanceof Anthropic.AuthenticationError) return "Server has no valid ANTHROPIC_API_KEY.";
       if (err instanceof Anthropic.RateLimitError) return "Rate limited by the model API. Try again in a moment.";
@@ -33,12 +39,17 @@ export function anthropicProvider(client: Anthropic, model = DEFAULT_ANTHROPIC_M
   };
 }
 
-export function openaiProvider(client: OpenAI, model = DEFAULT_OPENAI_MODEL, hasKey = true): Provider {
+export function openaiProvider(
+  client: OpenAI,
+  model = DEFAULT_OPENAI_MODEL,
+  hasKey = true,
+  effort: ReasoningEffort = DEFAULT_EFFORT,
+): Provider {
   return {
     name: "openai",
     model,
     hasKey,
-    run: (req, emit, signal) => runSystem1OpenAI(client, req, emit, signal, model),
+    run: (req, emit, signal) => runSystem1OpenAI(client, req, emit, signal, model, effort),
     describeError(err) {
       if (err instanceof OpenAI.AuthenticationError) return "Server has no valid OPENAI_API_KEY.";
       if (err instanceof OpenAI.RateLimitError) return "Rate limited by the model API. Try again in a moment.";
@@ -46,6 +57,15 @@ export function openaiProvider(client: OpenAI, model = DEFAULT_OPENAI_MODEL, has
       if (err instanceof Error && /api key|authentication/i.test(err.message)) return "Server has no OPENAI_API_KEY configured.";
     },
   };
+}
+
+/**
+ * OPENAI_BASE_URL points the client at any OpenAI-compatible API (e.g. Cerebras: https://api.cerebras.ai/v1);
+ * SYSTEM1_MODEL must then name one of that service's models. The SDK throws at construction without a key,
+ * so use a placeholder; calls then fail with a 401.
+ */
+export function openaiClientFromEnv(env: NodeJS.ProcessEnv): OpenAI {
+  return new OpenAI({ apiKey: env.OPENAI_API_KEY || "missing", baseURL: env.OPENAI_BASE_URL || undefined });
 }
 
 /**
@@ -60,11 +80,11 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): Provider 
   }
   const name: ProviderName = explicit ? (explicit as ProviderName) : !env.ANTHROPIC_API_KEY && env.OPENAI_API_KEY ? "openai" : "anthropic";
   const model = env.SYSTEM1_MODEL || undefined;
+  const effort = effortFromEnv(env);
 
   if (name === "openai") {
-    // The SDK throws at construction without a key, so use a placeholder; calls then fail with a 401.
     const hasKey = Boolean(env.OPENAI_API_KEY);
-    return openaiProvider(new OpenAI({ apiKey: env.OPENAI_API_KEY || "missing" }), model, hasKey);
+    return openaiProvider(openaiClientFromEnv(env), model, hasKey, effort);
   }
-  return anthropicProvider(new Anthropic(), model, Boolean(env.ANTHROPIC_API_KEY));
+  return anthropicProvider(new Anthropic(), model, Boolean(env.ANTHROPIC_API_KEY), effort);
 }

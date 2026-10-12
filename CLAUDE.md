@@ -48,7 +48,7 @@ Setup: `cp .env.example .env` and set an API key. The server loads `../.env` via
 
 ### Env vars (server-side only)
 
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (set at least one), `LLM_PROVIDER` (`anthropic`|`openai`; otherwise whichever key is set, Anthropic if both; any other value throws at startup), `SYSTEM1_MODEL` (defaults: `claude-haiku-4-5` / `gpt-4.1-mini`), `PORT` (8787), `LOG_LEVEL` (Fastify logger, default `info`), `FASTPATH_URL` (local Laya sidecar; unset = cloud only), `FASTPATH_TIMEOUT_MS` (1000). The sidecar has its own: `LAYA_CHECKPOINT` (unset = rules only, no torch needed), `FASTPATH_PORT` (8788), `FASTPATH_HOST`, `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5), `FASTPATH_IDLE_UNLOAD_S` (900), `LAYA_DEVICE`.
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (set at least one), `LLM_PROVIDER` (`anthropic`|`openai`; otherwise whichever key is set, Anthropic if both; any other value throws at startup), `OPENAI_BASE_URL` (optional; any OpenAI-compatible API such as Cerebras `https://api.cerebras.ai/v1`: then set `LLM_PROVIDER=openai` and `SYSTEM1_MODEL` to that service's model id; built in `provider.ts#openaiClientFromEnv`), `REASONING_EFFORT` (`low`|`medium`|`high`|`off`, default `low`; `server/src/effort.ts` only sends it to models matching its allow-list regexes because gpt-4.1-mini/Haiku 4.5 reject the parameter: OpenAI-style `reasoning_effort`, Anthropic `output_config.effort`; add new model families there), `SYSTEM1_MODEL` (defaults: `claude-haiku-4-5` / `gpt-4.1-mini`), `PORT` (8787), `LOG_LEVEL` (Fastify logger, default `info`), `FASTPATH_URL` (local Laya sidecar; unset = cloud only), `FASTPATH_TIMEOUT_MS` (1000). The sidecar has its own: `LAYA_CHECKPOINT` (unset = rules only, no torch needed), `FASTPATH_PORT` (8788), `FASTPATH_HOST`, `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5), `FASTPATH_IDLE_UNLOAD_S` (900), `LAYA_DEVICE`.
 
 ## Architecture / request flow
 
@@ -84,6 +84,7 @@ shared/src/protocol.ts    CommandRequest, SceneSummary, CommandEvent
 server/src/index.ts       Entry: providerFromEnv() -> buildApp() -> listen 0.0.0.0:$PORT
 server/src/app.ts         Fastify app: GET /api/health, POST /api/command (SSE via reply.hijack())
 server/src/provider.ts    Provider interface, anthropicProvider/openaiProvider, providerFromEnv, error mapping
+server/src/effort.ts      REASONING_EFFORT parsing + which models accept an effort parameter
 server/src/system1.ts     Anthropic streaming run + TOOLS + blockToEvents (exported for tests)
 server/src/system1-openai.ts  OpenAI streaming run + OPENAI_TOOLS + toolCallToEvent
 server/src/fastpath.ts    withFastPath (local-first provider wrapper), httpFastPath client, fastPathFromEnv

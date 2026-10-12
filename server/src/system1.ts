@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { ACTION_DESCRIPTIONS, ACTION_NAMES, ACTION_SCHEMAS, parseAction, type CommandEvent, type CommandRequest } from "@board/shared";
+import { DEFAULT_EFFORT, anthropicSupportsEffort, type ReasoningEffort } from "./effort";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
 
 export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5";
@@ -44,6 +45,7 @@ export async function runSystem1(
   emit: Emit,
   signal?: AbortSignal,
   model = DEFAULT_ANTHROPIC_MODEL,
+  effort: ReasoningEffort = DEFAULT_EFFORT,
 ) {
   const startedAt = Date.now();
   let count = 0;
@@ -52,6 +54,7 @@ export async function runSystem1(
     {
       model,
       max_tokens: 4096,
+      ...(effort !== "off" && anthropicSupportsEffort(model) ? { output_config: { effort } } : {}),
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: TOOLS,
       tool_choice: { type: "auto" },

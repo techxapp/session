@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import { parseAction, type CommandRequest } from "@board/shared";
+import { DEFAULT_EFFORT, openaiSupportsEffort, type ReasoningEffort } from "./effort";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
 import { TOOLS, type Emit } from "./system1";
 
@@ -40,6 +41,7 @@ export async function runSystem1OpenAI(
   emit: Emit,
   signal?: AbortSignal,
   model = DEFAULT_OPENAI_MODEL,
+  effort: ReasoningEffort = DEFAULT_EFFORT,
 ) {
   const startedAt = Date.now();
   let count = 0;
@@ -48,6 +50,7 @@ export async function runSystem1OpenAI(
     {
       model,
       max_completion_tokens: 4096,
+      ...(effort !== "off" && openaiSupportsEffort(model) ? { reasoning_effort: effort } : {}),
       stream: true,
       tools: OPENAI_TOOLS,
       tool_choice: "auto",

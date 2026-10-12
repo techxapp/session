@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import type { CommandEvent, CommandRequest } from "@board/shared";
 import { buildApp } from "./app";
 import { fastPathFromEnv, httpFastPath, withFastPath, type FastDecision } from "./fastpath";
-import { anthropicProvider, openaiProvider, providerFromEnv } from "./provider";
+import { anthropicSupportsEffort, effortFromEnv, openaiSupportsEffort } from "./effort";
+import { anthropicProvider, openaiClientFromEnv, openaiProvider, providerFromEnv } from "./provider";
 import { buildUserMessage } from "./prompt";
 import { TOOLS, blockToEvents } from "./system1";
 import { OPENAI_TOOLS, toolCallToEvent } from "./system1-openai";
@@ -213,6 +214,43 @@ describe("POST /api/command (OpenAI)", () => {
   });
 });
 
+describe("reasoning effort", () => {
+  it("defaults to low and validates REASONING_EFFORT", () => {
+    expect(effortFromEnv({})).toBe("low");
+    expect(effortFromEnv({ REASONING_EFFORT: " High " })).toBe("high");
+    expect(effortFromEnv({ REASONING_EFFORT: "off" })).toBe("off");
+    expect(() => effortFromEnv({ REASONING_EFFORT: "max" })).toThrow(/REASONING_EFFORT/);
+  });
+  it("only knows which models accept it", () => {
+    expect(openaiSupportsEffort("gpt-oss-120b")).toBe(true);
+    expect(openaiSupportsEffort("gpt-5-mini")).toBe(true);
+    expect(openaiSupportsEffort("gpt-4.1-mini")).toBe(false);
+    expect(anthropicSupportsEffort("claude-sonnet-5-5")).toBe(true);
+    expect(anthropicSupportsEffort("claude-haiku-4-5")).toBe(false);
+  });
+  it("sends effort to Anthropic models that support it, and not to Haiku", async () => {
+    const run = async (model: string, effort?: "off" | "high") => {
+      const { client, calls } = fakeClient([]);
+      await anthropicProvider(client, model, true, effort).run({ text: "x", scene }, () => {});
+      return calls[0];
+    };
+    expect(await run("claude-sonnet-5-5")).toMatchObject({ output_config: { effort: "low" } });
+    expect(await run("claude-sonnet-5-5", "high")).toMatchObject({ output_config: { effort: "high" } });
+    expect(await run("claude-sonnet-5-5", "off")).not.toHaveProperty("output_config");
+    expect(await run("claude-haiku-4-5")).not.toHaveProperty("output_config");
+  });
+  it("sends reasoning_effort to OpenAI-compatible models that support it", async () => {
+    const run = async (model: string, effort?: "off") => {
+      const { client, calls } = fakeOpenAI([]);
+      await openaiProvider(client, model, true, effort).run({ text: "x", scene }, () => {});
+      return calls[0];
+    };
+    expect(await run("gpt-oss-120b")).toMatchObject({ reasoning_effort: "low" });
+    expect(await run("gpt-oss-120b", "off")).not.toHaveProperty("reasoning_effort");
+    expect(await run("gpt-4.1-mini")).not.toHaveProperty("reasoning_effort");
+  });
+});
+
 describe("providerFromEnv", () => {
   it("prefers LLM_PROVIDER, then whichever key is set", () => {
     expect(providerFromEnv({ ANTHROPIC_API_KEY: "a" }).name).toBe("anthropic");
@@ -224,6 +262,12 @@ describe("providerFromEnv", () => {
   it("starts without a key and reports it", () => {
     expect(providerFromEnv({})).toMatchObject({ name: "anthropic", hasKey: false });
     expect(providerFromEnv({ LLM_PROVIDER: "openai" })).toMatchObject({ name: "openai", hasKey: false });
+  });
+  it("points the OpenAI client at OPENAI_BASE_URL when set", () => {
+    expect(openaiClientFromEnv({ OPENAI_API_KEY: "o" }).baseURL).toBe("https://api.openai.com/v1");
+    expect(openaiClientFromEnv({ OPENAI_API_KEY: "o", OPENAI_BASE_URL: "https://api.cerebras.ai/v1" }).baseURL).toBe(
+      "https://api.cerebras.ai/v1",
+    );
   });
   it("rejects an unknown provider", () => {
     expect(() => providerFromEnv({ LLM_PROVIDER: "gemini" })).toThrow(/LLM_PROVIDER/);
