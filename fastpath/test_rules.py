@@ -1,0 +1,106 @@
+"""Tests for the rule tier (fastpath/rules.py), no model needed: python -m unittest fastpath.test_rules"""
+
+import unittest
+
+from fastpath.rules import Command, rule_command
+
+SCENE = {
+    "elements": [
+        {"id": "api", "type": "rectangle", "label": "API Gateway", "color": "blue"},
+        {"id": "cache", "type": "rectangle", "label": "Cache", "color": "orange"},
+        {"id": "db", "type": "ellipse", "label": "Postgres"},
+        {"id": "title", "type": "text", "label": "Sprint Board"},
+        {"id": "s1", "type": "sticky", "label": "Buy milk", "color": "yellow"},
+        {"id": "s2", "type": "sticky", "label": "Ship v2", "color": "yellow"},
+        {"id": "tree", "type": "image", "label": "tree"},
+        {"id": "a1", "type": "arrow", "from": "api", "to": "db"},
+    ],
+    "selectedIds": ["cache"],
+    "recentIds": ["db"],
+}
+
+
+def actions(text: str):
+    got = rule_command(text, SCENE)
+    return got[1] if got and got[0] == "fast" else None
+
+
+class Normalise(unittest.TestCase):
+    def test_fillers_stutters_politeness_and_corrections(self):
+        self.assertEqual(Command("um can you delete the, the cache please").w, ["delete", "the", "cache"])
+        self.assertEqual(Command("make it red, no wait, blue").w, ["make", "it", "blue"])
+        self.assertEqual(Command("move it left sorry I mean right").w, ["move", "it", "right"])
+        self.assertEqual(Command("make it red or blue").w, ["make", "it", "red", "or", "blue"])
+
+
+class Rules(unittest.TestCase):
+    def test_answers(self):
+        U = lambda t, **k: {"name": "update_element", "input": {"target": t, **k}}  # noqa: E731
+        cases = {
+            "undo": [{"name": "undo_last_command", "input": {}}],
+            "oops, go back": [{"name": "undo_last_command", "input": {}}],
+            "wipe the whole board": [{"name": "clear_board", "input": {"confirm": True}}],
+            "delete it": [{"name": "delete_elements", "input": {"targets": ["cache"]}}],
+            "remove the api gateway from the board": [{"name": "delete_elements", "input": {"targets": ["api"]}}],
+            "delete all the notes": [{"name": "delete_elements", "input": {"targets": ["s1", "s2"]}}],
+            "make the API red": [U("api", color="red")],
+            "change the colour of postgres to grey": [U("db", color="gray")],
+            "turn the yellow notes pink": [U("s1", color="pink"), U("s2", color="pink")],
+            "make the tree big": [U("tree", size="large")],
+            "make the title medium sized": [U("title", size="medium")],
+            "nudge it a bit to the left": [{"name": "move_element", "input": {"target": "cache", "direction": "left", "distance": "little"}}],
+            "move postgres down": [{"name": "move_element", "input": {"target": "db", "direction": "down"}}],
+            "draw a big red circle": [{"name": "add_shape", "input": {"kind": "ellipse", "color": "red", "size": "large"}}],
+            "put a sticky note at the bottom": [{"name": "add_shape", "input": {"kind": "sticky", "placement": {"region": "bottom"}}}],
+            "add a box called Payments API": [{"name": "add_shape", "input": {"id": "payments-api", "kind": "rectangle", "label": "Payments API"}}],
+            "add a heading saying Q3 goals": [{"name": "add_text", "input": {"id": "q3-goals", "text": "Q3 goals", "style": "heading"}}],
+            "rename the cache to Redis": [U("cache", label="Redis")],
+            "change the label of the ship v2 note to ship v3": [U("s2", label="ship v3")],
+            "change the title to Retro": [U("title", label="Retro")],
+            "connect the cache to postgres": [{"name": "add_arrow", "input": {"from": "cache", "to": "db"}}],
+            "draw a red dotted arrow between the api and the cache": [
+                {"name": "add_arrow", "input": {"from": "api", "to": "cache", "color": "red", "style": "dotted"}}
+            ],
+            "draw a tree": [{"name": "add_object", "input": {"id": "tree", "object": "tree"}}],
+        }
+        for text, want in cases.items():
+            with self.subTest(text):
+                self.assertEqual(actions(text), want)
+
+    def test_falls_through(self):
+        for text in [
+            "make it bigger",
+            "make it red or blue",
+            "change the cache to a circle",
+            "change the title to red and bold",
+            "make the tree red",  # objects have no colour
+            "delete the database",  # a synonym: Laya's job
+            "delete the box",  # two boxes
+            "delete the cache next to the api",
+            "move it next to postgres",
+            "move the cache to the left of the api",
+            "rename all the notes to done",
+            "add a box called payments and connect it to the api",
+            "add a sticky saying call mom on the right",
+            "add a box called payments no wait billing",
+            "add three boxes",
+            "connect the api to the database",
+            "connect the cache to the cache",
+            "I'll delete that later",
+            "what if we made the api red",
+            "the cache is red",
+            "write that down",
+            "clear",
+            "let's grab a tree",  # casual verb: Laya decides whether it's for the board
+            "hey can you hear me",
+        ]:
+            with self.subTest(text):
+                self.assertIsNone(rule_command(text, SCENE))
+
+    def test_measurements_settle_in_code(self):
+        self.assertEqual(rule_command("draw a box 10 ft wide", SCENE)[0], "fast")
+        self.assertEqual(rule_command("I walked 20 ft", SCENE)[:2], ("llm", None))
+
+
+if __name__ == "__main__":
+    unittest.main()

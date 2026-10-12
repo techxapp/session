@@ -40,21 +40,21 @@ Without an API key the app still loads. The status pill shows **API key missing*
 - **Objects** (`add_object`): clip-art from [Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (Flat style), from the `@iconify-json/fluent-emoji-flat` package pinned in `web/package.json`. `npm run dev` and `npm run build` write the SVGs to `web/public/objects/` (gitignored), so nothing is fetched at runtime and it works offline once `npm install` has run. To add an object, add a line to `shared/objects.json` (name, Fluent icon name, aliases) and restart `npm run dev`.
 - The model gets a compact text summary of the scene (ids, labels, positions, selection, recently touched elements), so references like "it", "the database" or "that box" resolve.
 
-### Optional: local fast path (Laya)
+### Optional: local fast path (rules + Laya)
 
-Simple commands ("make the API red", "move it left", "delete all the notes", "undo") can be decided by a small local model instead of the cloud LLM, in about 0.2–0.45 s on a 4 GB laptop GPU and with no API cost. `fastpath/server.py` runs a fine-tuned [Laya](https://huggingface.co/convaiinnovations/laya) checkpoint (Apache 2.0) as a sidecar. When `FASTPATH_URL` is set, the server asks it first:
+Simple commands can be settled locally instead of by the cloud LLM, with no API cost. `fastpath/server.py` is a sidecar with three tiers; when `FASTPATH_URL` is set, the server asks it first:
 
-- **fast**: the sidecar is confident. Its actions are validated with the same zod schemas and streamed to the board.
-- **ignore**: chatter ("can everyone see my screen") is dropped.
-- Simple object commands ("draw a tree", "add a big dog", "let's grab a tree") are built in code as `add_object` without the cloud model. A clear verb (draw, add, put...) skips Laya entirely; a casual one (grab, get, want...) also needs Laya to agree it's a board command, so "let's grab a coffee" chatter isn't drawn. Several objects, placement ("next to the house") or labels go to the cloud.
-- **llm**: anything else (new text, several changes, low confidence) goes to the cloud model, as does every command when the sidecar is down or slower than `FASTPATH_TIMEOUT_MS`.
+1. **Rules** (code, under 1 ms, no GPU): commands that follow a small fixed grammar, where every word has to be accounted for. These cover undo and clear; delete, recolor, resize and move of a named element ("make the API red", "nudge it a bit left", "delete all the notes"); new shapes with an optional colour, size, region and label ("add a pink sticky saying call the bank"); titles and captions ("add a title that says Q3 plan"); renames ("rename the cache to Redis"); arrows ("connect the API to the cache"); clip-art ("draw a tree"); and simple measurements ("the tree is 10 ft tall"). Any leftover word, second clause or unclear reference passes the command on.
+2. **Laya** (optional, about 0.2 s on a 4 GB laptop GPU): a fine-tuned [Laya](https://huggingface.co/convaiinnovations/laya) checkpoint (Apache 2.0) handles what the rules can't parse. It drops chatter ("can everyone see my screen"), handles synonyms and paraphrases ("delete the database" when the box is labelled Postgres), and checks casual object commands ("let's grab a tree" vs. "let's grab a coffee").
+3. **Cloud**: anything else (several changes, placement next to other elements, generating diagrams, low confidence) goes to the cloud model. So does every command when the sidecar is down or slower than `FASTPATH_TIMEOUT_MS`.
 
-Each command in the activity panel (right side; collapse it with its header button) shows a **Local** or **Cloud** badge, with the reason (for example "Sent to the cloud (local model passed: needs new text)"). The status pill reads "System 1 · Haiku 4.5 + Laya" when the fast path is on.
+Local actions are validated with the same zod schemas and streamed to the board. Each command in the activity panel (right side; collapse it with its header button) shows a **Local** or **Cloud** badge with the reason, for example "Handled locally (rule: recolor)" or "Sent to the cloud (local model passed: several changes)". The status pill reads "System 1 · Haiku 4.5 + local" when the fast path is on.
 
-Run it (Python 3.10+ with CUDA PyTorch; see `fastpath/requirements.txt`):
+Run it. Without a checkpoint the sidecar runs the rules only and needs plain Python 3.10+. With Laya it also needs CUDA PyTorch (see `fastpath/requirements.txt`):
 
 ```
-LAYA_CHECKPOINT=/path/to/laya-checkpoint python fastpath/server.py   # listens on 127.0.0.1:8788
+python fastpath/server.py                                            # rules only
+LAYA_CHECKPOINT=/path/to/laya-checkpoint python fastpath/server.py   # rules + Laya; listens on 127.0.0.1:8788
 FASTPATH_URL=http://127.0.0.1:8788 npm run dev
 ```
 
@@ -81,10 +81,10 @@ In dev builds, `window.__board.apply(text, actions)` feeds actions through the s
 | `LLM_PROVIDER` | auto | `anthropic` or `openai`. By default the provider whose key is set is used, Anthropic if both |
 | `SYSTEM1_MODEL` | `claude-haiku-4-5` / `gpt-4.1-mini` | Fast-path model (default depends on the provider) |
 | `PORT` | `8787` | Server port (Vite proxies `/api` to it) |
-| `FASTPATH_URL` | — | Local Laya sidecar, e.g. `http://127.0.0.1:8788`. Unset = every command goes to the cloud model |
+| `FASTPATH_URL` | — | Local fast-path sidecar, e.g. `http://127.0.0.1:8788`. Unset = every command goes to the cloud model |
 | `FASTPATH_TIMEOUT_MS` | `1000` | How long to wait for the sidecar before using the cloud model |
 
-The sidecar reads its own variables: `LAYA_CHECKPOINT` (required), `FASTPATH_PORT` (8788), `FASTPATH_HOST` (127.0.0.1), `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5), `FASTPATH_IDLE_UNLOAD_S` (900; unload the model from the GPU after this many idle seconds, the next command wakes it and is answered by the cloud model; 0 = never), `LAYA_DEVICE`.
+The sidecar reads its own variables: `LAYA_CHECKPOINT` (unset = rules only), `FASTPATH_PORT` (8788), `FASTPATH_HOST` (127.0.0.1), `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5), `FASTPATH_IDLE_UNLOAD_S` (900; unload the model from the GPU after this many idle seconds, the next command wakes it and is answered by the cloud model; 0 = never), `LAYA_DEVICE`.
 
 ## Licenses
 

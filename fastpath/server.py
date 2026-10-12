@@ -1,17 +1,19 @@
 """
-Fast-path sidecar: answers "can this command skip the LLM?" with a fine-tuned Laya checkpoint.
+Fast-path sidecar: answers "can this command skip the LLM?" with code rules, then a fine-tuned Laya checkpoint.
 
 POST /decide {text, scene}  ->  {route: "fast" | "ignore" | "llm", actions: [{name, input}] | null, reason, model, ms, ...}
 GET  /health                ->  {ok, model, threshold, device, awake}
 
 The Node server (server/src/fastpath.ts) calls /decide before the LLM: "fast" actions are streamed to the board
-as they are, "ignore" drops chatter, and "llm" (or any failure) falls through to the normal model call. One
-Laya call asks every question in fastpath/decide.py; code then picks the target when the command names it,
-routes on confidence and builds the actions.
+as they are, "ignore" drops chatter, and "llm" (or any failure) falls through to the normal model call.
+First the rules (fastpath/rules.py) try to settle the command in code. Otherwise one Laya call asks every
+question in fastpath/decide.py; code then picks the target when the command names it, routes on confidence and
+builds the actions. Without LAYA_CHECKPOINT the sidecar runs rules only (no torch needed) and passes the rest
+to the LLM.
 
 Setup (this machine): reuse the eval venv, which already has torch (CUDA) and laya.
   eval/.venv/Scripts/python fastpath/server.py
-Env: LAYA_CHECKPOINT (fine-tuned checkpoint dir, required), FASTPATH_PORT (8788), FASTPATH_HOST (127.0.0.1),
+Env: LAYA_CHECKPOINT (fine-tuned checkpoint dir; unset = rules only), FASTPATH_PORT (8788), FASTPATH_HOST (127.0.0.1),
      FASTPATH_THRESHOLD (0.8: no wrong actions on any eval set), LAYA_DEVICE (cuda / cpu, default Laya's choice),
      FASTPATH_KEEP_WARM_S (5; a tiny decision after this many idle seconds keeps the GPU clocked up; 0 disables),
      FASTPATH_IDLE_UNLOAD_S (900; with no /decide request for this long the model is unloaded from the GPU and
@@ -32,8 +34,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastpath.decide import (  # noqa: E402
     build_questions,
     draws_object,
-    has_measurement,
-    measure_command,
     object_command,
     parse_answers,
     resolve_target,
@@ -41,11 +41,36 @@ from fastpath.decide import (  # noqa: E402
     route_why,
     words,
 )
+from fastpath.rules import rule_command  # noqa: E402
 
 # Laya's head holds about this many target options; with more elements the target is left to the code rules.
 MAX_TARGET_OPTIONS = 10
 # Longer commands are almost never one simple action; skip the model call.
 MAX_WORDS = 30
+# `model` of answers settled by fastpath/rules.py, shown as the route badge's model.
+RULES_MODEL = "rules"
+
+
+def reply(route: str, actions: list[dict] | None, reason: str, model: str, t: float, **extra) -> dict:
+    return {"route": route, "actions": actions, "reason": reason, "model": model, "ms": round((time.perf_counter() - t) * 1000, 1), **extra}
+
+
+def code_answer(text: str, scene: dict, t: float) -> dict | None:
+    """The answer when code settles the command without a decision model (too long, or a rule matches), else None."""
+    if len(words(text)) > MAX_WORDS:
+        return reply("llm", None, "long command", RULES_MODEL, t)
+    ruled = rule_command(text, scene)
+    return reply(*ruled, RULES_MODEL, t, answers={}, target_rule=None) if ruled else None
+
+
+class RulesOnly:
+    """The sidecar without a decision model: rule answers only, everything else goes to the LLM."""
+
+    name, threshold, device, asleep = RULES_MODEL, None, None, False
+
+    def decide(self, text: str, scene: dict) -> dict:
+        t = time.perf_counter()
+        return code_answer(text, scene, t) or reply("llm", None, "no rule matched", RULES_MODEL, t)
 
 
 def alias_scene(scene: dict) -> tuple[dict, dict[str, str]]:
@@ -155,18 +180,9 @@ class FastPath:
             self.last_request = time.monotonic()
             if self.asleep:
                 self.wake()
-        if len(words(text)) > MAX_WORDS:
-            return {"route": "llm", "actions": None, "reason": "long command", "model": self.name, "ms": 0}
-        if has_measurement(text):  # built in code or left to the LLM; Laya has no add_dimension
-            measured = measure_command(text, scene)
-            decision, actions, why = ("fast", *measured) if measured else ("llm", None, "measurement needs the LLM")
-            return {"route": decision, "actions": actions, "reason": why, "model": self.name, "answers": {},
-                    "target_rule": None, "ms": round((time.perf_counter() - t) * 1000, 1)}  # fmt: skip
-        obj = object_command(text)
-        if obj and not obj["casual"]:  # "draw a tree": nothing for the model to decide
-            decision, actions, why = route_object(obj, None, self.threshold)
-            return {"route": decision, "actions": actions, "reason": why, "model": self.name, "answers": {},
-                    "target_rule": None, "ms": round((time.perf_counter() - t) * 1000, 1)}  # fmt: skip
+        if not warming and (coded := code_answer(text, scene, t)):  # rules, measurements, clear-verb objects
+            return coded
+        obj = object_command(text)  # only a casual one is left ("let's grab a tree"): Laya checks it's for the board
         aliased, back = alias_scene(scene)
         questions = build_questions(aliased)
         if len(questions.get("target", {}).get("criteria", {})) > MAX_TARGET_OPTIONS + 1:
@@ -198,7 +214,7 @@ class FastPath:
         }
 
 
-def handler_for(fast: FastPath):
+def handler_for(fast: FastPath | RulesOnly):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: dict) -> None:
             data = json.dumps(body).encode()
@@ -240,9 +256,13 @@ def handler_for(fast: FastPath):
 
 def main() -> None:
     checkpoint = os.environ.get("LAYA_CHECKPOINT")
-    if not checkpoint or not Path(checkpoint, "rl_agent_config.json").exists():
-        sys.exit("Set LAYA_CHECKPOINT to a fine-tuned Laya checkpoint dir (one with rl_agent_config.json).")
     host, port = os.environ.get("FASTPATH_HOST", "127.0.0.1"), int(os.environ.get("FASTPATH_PORT", 8788))
+    if not checkpoint:
+        print(f"fast path ready on http://{host}:{port} (rules only: LAYA_CHECKPOINT is not set)", flush=True)
+        ThreadingHTTPServer((host, port), handler_for(RulesOnly())).serve_forever()
+        return
+    if not Path(checkpoint, "rl_agent_config.json").exists():
+        sys.exit("LAYA_CHECKPOINT must be a fine-tuned Laya checkpoint dir (one with rl_agent_config.json).")
     fast = FastPath(
         checkpoint,
         float(os.environ.get("FASTPATH_THRESHOLD", 0.8)),
