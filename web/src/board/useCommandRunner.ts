@@ -4,6 +4,7 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { CommandEvent, CommandSource } from "@board/shared";
 import { streamCommand } from "../api";
+import { playAnimation } from "./animate";
 import { ActionError, applyAction, isTopLevel } from "./executor";
 import { loadObjectFiles } from "./objects";
 import { summarize, visibleArea } from "./summary";
@@ -88,8 +89,11 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null) {
               continue;
             }
             try {
-              const res = applyAction(api.getSceneElementsIncludingDeleted(), ev.action, ctx);
-              api.updateScene({ elements: res.elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+              const before = api.getSceneElementsIncludingDeleted();
+              const res = applyAction(before, ev.action, ctx);
+              // Play motion before the next action, so "walk to X, then to Y" runs in order.
+              if (res.animation) await playAnimation(api, before, res.elements, res.animation, controller.signal);
+              else api.updateScene({ elements: res.elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
               if (ev.action.name === "add_object") void loadObjectFiles(api);
               touched.push(...res.touched);
               applied++;

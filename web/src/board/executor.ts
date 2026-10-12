@@ -22,6 +22,16 @@ export interface ExecResult {
   elements: El[];
   /** Element ids created or changed by this action. */
   touched: string[];
+  /** Set by animate_element: `elements` is the end state; the runner plays the motion before showing it. */
+  animation?: Animation;
+}
+
+export interface Animation {
+  id: string;
+  dx: number;
+  dy: number;
+  durationMs: number;
+  style: "walk" | "slide";
 }
 
 export class ActionError extends Error {}
@@ -56,6 +66,8 @@ export function applyAction(elements: readonly El[], action: BoardAction, ctx: E
       return addDimension(elements, action.input, ctx);
     case "move_element":
       return moveElement(elements, action.input, ctx);
+    case "animate_element":
+      return animateElement(elements, action.input, ctx);
     case "update_element":
       return updateElement(elements, action.input, ctx);
     case "delete_elements":
@@ -371,23 +383,80 @@ function moveElement(
   input: Extract<BoardAction, { name: "move_element" }>["input"],
   ctx: ExecContext,
 ): ExecResult {
-  const target = resolve(elements, input.target, ctx);
-  let dx = 0;
-  let dy = 0;
-  if (input.placement) {
-    const pos = place(elements, input.placement, target.width, target.height, ctx, target.id);
-    dx = pos.x - target.x;
-    dy = pos.y - target.y;
-  } else if (input.direction) {
-    const d = NUDGE[input.distance ?? "some"];
-    dx = DIR[input.direction][0] * d;
-    dy = DIR[input.direction][1] * d;
-  } else {
-    throw new ActionError("Where should it move?");
-  }
-  if (target.type === "arrow") throw new ActionError("Arrows follow the shapes they connect; move a shape instead.");
+  const target = movable(elements, input.target, ctx);
+  const { dx, dy } = moveDelta(elements, target, input, ctx);
   touch(ctx, target.id);
   return { elements: translate(elements, new Set([target.id]), dx, dy), touched: [target.id] };
+}
+
+function movable(elements: readonly El[], ref: string, ctx: ExecContext) {
+  const target = resolve(elements, ref, ctx);
+  if (target.type === "arrow") throw new ActionError("Arrows follow the shapes they connect; move a shape instead.");
+  return target;
+}
+
+/** Offset for a move to a placement or a nudge in a direction. */
+function moveDelta(
+  elements: readonly El[],
+  target: El,
+  input: { placement?: Placement; direction?: keyof typeof DIR; distance?: keyof typeof NUDGE },
+  ctx: ExecContext,
+) {
+  if (input.placement) {
+    const pos = place(elements, input.placement, target.width, target.height, ctx, target.id);
+    return { dx: pos.x - target.x, dy: pos.y - target.y };
+  }
+  if (input.direction) {
+    const d = NUDGE[input.distance ?? "some"];
+    return { dx: DIR[input.direction][0] * d, dy: DIR[input.direction][1] * d };
+  }
+  throw new ActionError("Where should it move?");
+}
+
+/** Scene px per second. */
+const SPEED = { slow: 150, normal: 300, fast: 600 } as const;
+/** How close a mover stops beside what it walked towards (tighter than GAP, which leaves room for arrows). */
+const ARRIVE_GAP = 30;
+
+function animateElement(
+  elements: readonly El[],
+  input: Extract<BoardAction, { name: "animate_element" }>["input"],
+  ctx: ExecContext,
+): ExecResult {
+  const target = movable(elements, input.target, ctx);
+  const centre = (e: El) => ({ x: e.x + e.width / 2, y: e.y + e.height / 2 });
+  let delta: { dx: number; dy: number };
+  if (input.toward) {
+    const other = resolve(elements, input.toward, ctx);
+    if (other.id === target.id) throw new ActionError("It can't move towards itself.");
+    const [a, b] = [centre(target), centre(other)];
+    // Stop on the side of `other` that faces the mover.
+    const side: Side = Math.abs(a.x - b.x) >= Math.abs(a.y - b.y) ? (a.x < b.x ? "left" : "right") : a.y < b.y ? "above" : "below";
+    const obstacles = elements.filter((e) => isTopLevel(e) && e.type !== "arrow" && e.id !== target.id).map(boxOf);
+    const pos = findFreeSpot(
+      { ...besides(boxOf(other), target.width, target.height, side, ARRIVE_GAP), w: target.width, h: target.height },
+      obstacles,
+      side,
+    );
+    delta = { dx: pos.x - target.x, dy: pos.y - target.y };
+  } else if (input.away_from) {
+    const other = resolve(elements, input.away_from, ctx);
+    const [a, b] = [centre(target), centre(other)];
+    const len = Math.hypot(a.x - b.x, a.y - b.y);
+    const [ux, uy] = len > 0 ? [(a.x - b.x) / len, (a.y - b.y) / len] : [1, 0];
+    const d = NUDGE[input.distance ?? "some"];
+    delta = { dx: Math.round(ux * d), dy: Math.round(uy * d) };
+  } else {
+    delta = moveDelta(elements, target, input, ctx);
+  }
+  touch(ctx, target.id);
+  const dist = Math.hypot(delta.dx, delta.dy);
+  const durationMs = Math.round(Math.min(2500, Math.max(300, (dist / SPEED[input.speed ?? "normal"]) * 1000)));
+  return {
+    elements: translate(elements, new Set([target.id]), delta.dx, delta.dy),
+    touched: [target.id],
+    animation: { id: target.id, ...delta, durationMs, style: input.style ?? (target.type === "image" ? "walk" : "slide") },
+  };
 }
 
 function updateElement(

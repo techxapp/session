@@ -378,7 +378,57 @@ def arrow(cmd: Command, scene: dict):
     return [{"name": "add_arrow", "input": {"from": pairs[0][0], "to": pairs[0][1], **extra}}], "add_arrow"
 
 
-TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, move]
+def verb_forms(*bases: str) -> set[str]:
+    """walk -> walk, walks, walking; drive -> drives, driving; go/dash -> goes/dashes."""
+    out = set()
+    for b in bases:
+        out |= {b, b + ("es" if b.endswith(("sh", "o")) else "s"), (b[:-1] if b.endswith("e") else b) + "ing"}
+    return out
+
+
+MOTION_SPEED = {
+    **{f: "normal" for f in verb_forms("walk", "go", "head", "travel", "march", "follow") | {"moves", "moving"}},
+    **{f: "fast" for f in verb_forms("rush", "race", "dash", "drive", "zoom", "chase") | {"run", "runs", "running", "fly", "flies", "flying"}},
+    **{f: "slow" for f in verb_forms("stroll", "creep", "crawl", "wander", "tiptoe")},
+}
+TOWARD_PREPS = sorted(["towards", "toward", "to", "up to", "over to", "straight to", "right up to"], key=lambda p: -len(p))
+
+
+def animate(cmd: Command, scene: dict):
+    """'the boy walks towards the girl', 'the dog is running away from the cat', 'move the boy towards the girl'."""
+    w = cmd.w
+    if w[0] in ("move", "bring"):  # imperative: only "towards"; "move X to Y" stays a move or placement
+        speed, preps = "normal", ["towards", "toward"]
+        at = next((i for i in range(2, len(w) - 1) if w[i] in preps), None)
+        mover_span = (1, at)
+    else:
+        verb = next((i for i, x in enumerate(w) if x in MOTION_SPEED), 0)
+        if not verb:
+            return None
+        speed, preps, at = MOTION_SPEED[w[verb]], TOWARD_PREPS + ["away from"], verb + 1  # "walks slowly to" -> LLM
+        mover_span = (0, verb - 1 if verb > 1 and w[verb - 1] in ("is", "are") else verb)
+    if at is None or at >= len(w):
+        return None
+    n = starts(w[at:], preps)
+    if not n:
+        return None
+    mover, other = ref(w[slice(*mover_span)], scene), ref(w[at + n :], scene)
+    if not mover or not other or mover == other:
+        return None
+    inp = {"target": mover, "away_from" if w[at] == "away" else "toward": other}
+    if speed != "normal":
+        inp["speed"] = speed
+    return [{"name": "animate_element", "input": inp}], "animate"
+
+
+def has_motion(cmd: Command) -> bool:
+    """A motion command the templates didn't take. Laya has no animate_element and would read it as a teleport."""
+    if not ({"towards", "toward", "away", "across"} & set(cmd.w) or "to" in cmd.w):
+        return False
+    return any(x in MOTION_SPEED for x in cmd.w) or cmd.w[0] in ("move", "bring") and {"towards", "toward"} & set(cmd.w)
+
+
+TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, move, animate]
 
 
 def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] | None:
@@ -401,4 +451,6 @@ def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] |
         hit = template(cmd, scene)
         if hit:
             return "fast", hit[0], f"rule: {hit[1]}"
+    if has_motion(cmd):  # Laya has no animate_element: built here or left to the LLM
+        return "llm", None, "motion needs the LLM"
     return None

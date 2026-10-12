@@ -102,5 +102,52 @@ class Rules(unittest.TestCase):
         self.assertEqual(rule_command("I walked 20 ft", SCENE)[:2], ("llm", None))
 
 
+KIDS = {
+    "elements": [
+        {"id": "boy", "type": "image", "label": "boy"},
+        {"id": "girl", "type": "image", "label": "girl"},
+        {"id": "dog", "type": "image", "label": "dog"},
+        {"id": "house", "type": "rectangle", "label": "House"},
+    ],
+    "selectedIds": [],
+    "recentIds": ["dog"],
+}
+
+
+class Motion(unittest.TestCase):
+    def test_answers(self):
+        A = lambda **k: [{"name": "animate_element", "input": k}]  # noqa: E731
+        cases = {
+            "boy moving towards girl": A(target="boy", toward="girl"),
+            "the boy walks towards the girl": A(target="boy", toward="girl"),
+            "the boy is walking up to the girl please": A(target="boy", toward="girl"),
+            "the dog runs to the house": A(target="dog", toward="house", speed="fast"),
+            "the dog is running away from the boy": A(target="dog", away_from="boy", speed="fast"),
+            "the girl strolls over to the house": A(target="girl", toward="house", speed="slow"),
+            "move the boy towards the girl": A(target="boy", toward="girl"),
+            "it goes to the girl": A(target="dog", toward="girl"),
+        }
+        for text, want in cases.items():
+            with self.subTest(text):
+                got = rule_command(text, KIDS)
+                self.assertEqual(got and got[:2], ("fast", want))
+
+    def test_needs_llm(self):
+        for text in [
+            "the boy walks to the girl and then to the house",
+            "the boy walks slowly to the girl",
+            "the dog chases the boy across the board",
+            "the boy walks to the boy",
+            "the kid walks to the girl",  # a synonym
+        ]:
+            with self.subTest(text):
+                self.assertEqual(rule_command(text, KIDS)[:2], ("llm", None))
+
+    def test_not_motion(self):
+        for text in ["move the boy to the left of the girl", "move the boy next to the girl", "put the boy next to the girl"]:
+            with self.subTest(text):
+                self.assertIsNone(rule_command(text, KIDS))
+
+
 if __name__ == "__main__":
     unittest.main()

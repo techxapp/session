@@ -100,6 +100,21 @@ export const MoveElement = z.object({
   placement: Placement.optional().describe("Or move to a placement (next to another element, region, or x/y)."),
 });
 
+export const AnimateElement = z
+  .object({
+    target: ElementId,
+    toward: ElementId.optional().describe("Move until next to this element (stops beside it, on the side facing the mover)."),
+    away_from: ElementId.optional().describe("Move straight away from this element."),
+    direction: Direction.optional().describe("Or move in a direction."),
+    distance: z.enum(["little", "some", "far"]).optional().describe("With direction or away_from. Default 'some'."),
+    placement: Placement.optional().describe("Or move to a place (region, next to something, or x/y)."),
+    speed: z.enum(["slow", "normal", "fast"]).optional().describe("walk/move/go = normal, run/drive/fly/rush = fast, stroll/creep = slow."),
+    style: z.enum(["walk", "slide"]).optional().describe("'walk' bobs as it goes. Default 'walk' for pictures, 'slide' for shapes/text."),
+  })
+  .refine((v) => [v.toward, v.away_from, v.direction, v.placement].filter((x) => x !== undefined).length === 1, {
+    message: "Give exactly one of toward, away_from, direction or placement.",
+  });
+
 export const UpdateElement = z.object({
   target: ElementId,
   label: z.string().max(1000).optional().describe("New text / label."),
@@ -125,6 +140,7 @@ export const ACTION_SCHEMAS = {
   add_arrow: AddArrow,
   add_dimension: AddDimension,
   move_element: MoveElement,
+  animate_element: AnimateElement,
   update_element: UpdateElement,
   delete_elements: DeleteElements,
   undo_last_command: UndoLastCommand,
@@ -143,6 +159,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
   add_dimension:
     "Draw a measurement line with a label like '10 ft': along one element's height/width (target), or across the gap between two elements (from + to).",
   move_element: "Move an existing element: nudge it in a direction or place it next to something / in a region.",
+  animate_element:
+    "Animate an existing element moving (walk, run, drive, fly) towards or away from another element, in a direction, or to a place. Use instead of move_element when the user describes motion ('moves towards', 'walks to', 'runs away from').",
   update_element: "Change an existing element's text, color or size.",
   delete_elements: "Remove elements (connected arrows are removed too).",
   undo_last_command: "Undo everything the previous command did.",

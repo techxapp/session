@@ -147,6 +147,55 @@ describe("applyAction", () => {
     expect(arrow.type === "arrow" && arrow.points[1][1]).toBeGreaterThan(arrowBefore.type === "arrow" ? arrowBefore.points[1][1] : 0);
   });
 
+  it("animates an object towards another, stopping beside it on the near side", () => {
+    const { els, c } = run([
+      { name: "add_object", input: { id: "boy", object: "boy", placement: { region: "left" } } },
+      { name: "add_object", input: { id: "girl", object: "girl", placement: { region: "right" } } },
+    ]);
+    const girl = byId(els, "girl");
+    const boyBefore = byId(els, "boy");
+    const res = applyAction(els, { name: "animate_element", input: { target: "boy", toward: "girl" } }, c);
+    const boy = byId(res.elements, "boy");
+    expect(boy.x + boy.width).toBeLessThanOrEqual(girl.x);
+    expect(girl.x - (boy.x + boy.width)).toBeLessThan(100);
+    expect(res.animation).toMatchObject({ id: "boy", dx: boy.x - boyBefore.x, dy: boy.y - boyBefore.y, style: "walk" });
+    expect(res.animation!.durationMs).toBeGreaterThanOrEqual(300);
+    expect(res.animation!.durationMs).toBeLessThanOrEqual(2500);
+    expect(c.recentIds[0]).toBe("boy");
+  });
+
+  it("animates away from an element and runs faster when asked", () => {
+    const { els, c } = run([
+      { name: "add_object", input: { id: "cat", object: "cat", placement: { x: 400, y: 400 } } },
+      { name: "add_object", input: { id: "dog", object: "dog", placement: { x: 700, y: 400 } } },
+    ]);
+    const walk = applyAction(els, { name: "animate_element", input: { target: "dog", away_from: "cat", distance: "far" } }, c);
+    expect(walk.animation).toMatchObject({ dx: 320, dy: 0 });
+    const run_ = applyAction(
+      els,
+      { name: "animate_element", input: { target: "dog", away_from: "cat", distance: "far", speed: "fast" } },
+      c,
+    );
+    expect(run_.animation!.durationMs).toBeLessThan(walk.animation!.durationMs);
+  });
+
+  it("slides shapes in a direction and drags their arrows along", () => {
+    const { els, c } = run([
+      { name: "add_shape", input: { id: "a", kind: "rectangle", label: "A" } },
+      { name: "add_shape", input: { id: "b", kind: "rectangle", label: "B" } },
+      { name: "add_arrow", input: { id: "ab", from: "a", to: "b" } },
+    ]);
+    const res = applyAction(els, { name: "animate_element", input: { target: "b", direction: "down", distance: "far" } }, c);
+    expect(res.animation).toMatchObject({ id: "b", dx: 0, dy: 320, style: "slide" });
+    expect(byId(res.elements, "b").y).toBe(byId(els, "b").y + 320);
+    expect(byId(res.elements, "ab")).not.toBe(byId(els, "ab"));
+  });
+
+  it("rejects moving towards itself", () => {
+    const { els, c } = run([{ name: "add_object", input: { id: "boy", object: "boy" } }]);
+    expect(() => applyAction(els, { name: "animate_element", input: { target: "boy", toward: "boy" } }, c)).toThrow(ActionError);
+  });
+
   it("updates a label and colour, keeping id and arrow bindings", () => {
     const { els, c } = run([
       { name: "add_shape", input: { id: "db", kind: "rectangle", label: "DB" } },
