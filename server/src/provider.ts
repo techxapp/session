@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import type { CommandRequest } from "@board/shared";
 import { DEFAULT_ANTHROPIC_MODEL, runSystem1, type Emit } from "./system1";
-import { DEFAULT_EFFORT, effortFromEnv, type ReasoningEffort } from "./effort";
+import { DEFAULT_EFFORT, DEFAULT_MAX_TURNS, effortFromEnv, maxTurnsFromEnv, type ReasoningEffort } from "./effort";
 import { DEFAULT_OPENAI_MODEL, runSystem1OpenAI } from "./system1-openai";
 
 export type ProviderName = "anthropic" | "openai";
@@ -44,12 +44,13 @@ export function openaiProvider(
   model = DEFAULT_OPENAI_MODEL,
   hasKey = true,
   effort: ReasoningEffort = DEFAULT_EFFORT,
+  maxTurns = DEFAULT_MAX_TURNS,
 ): Provider {
-  return {
+  const provider: Provider = {
     name: "openai",
     model,
     hasKey,
-    run: (req, emit, signal) => runSystem1OpenAI(client, req, emit, signal, model, effort),
+    run: (req, emit, signal) => runSystem1OpenAI(client, req, emit, signal, model, effort, maxTurns, (e) => provider.describeError(e)),
     describeError(err) {
       if (err instanceof OpenAI.AuthenticationError) return "Server has no valid OPENAI_API_KEY.";
       if (err instanceof OpenAI.RateLimitError) return "Rate limited by the model API. Try again in a moment.";
@@ -57,6 +58,7 @@ export function openaiProvider(
       if (err instanceof Error && /api key|authentication/i.test(err.message)) return "Server has no OPENAI_API_KEY configured.";
     },
   };
+  return provider;
 }
 
 /**
@@ -84,7 +86,7 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): Provider 
 
   if (name === "openai") {
     const hasKey = Boolean(env.OPENAI_API_KEY);
-    return openaiProvider(openaiClientFromEnv(env), model, hasKey, effort);
+    return openaiProvider(openaiClientFromEnv(env), model, hasKey, effort, maxTurnsFromEnv(env));
   }
   return anthropicProvider(new Anthropic(), model, Boolean(env.ANTHROPIC_API_KEY), effort);
 }

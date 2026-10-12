@@ -1,6 +1,6 @@
 import type OpenAI from "openai";
 import { parseAction, type CommandRequest } from "@board/shared";
-import { DEFAULT_EFFORT, openaiSupportsEffort, type ReasoningEffort } from "./effort";
+import { DEFAULT_EFFORT, DEFAULT_MAX_TURNS, openaiEffortParam, type ReasoningEffort } from "./effort";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
 import { TOOLS, type Emit } from "./system1";
 
@@ -30,10 +30,22 @@ export function toolCallToEvent(call: PendingCall, startedAt: number) {
   return { type: "action" as const, action: parsed.action, ms: Date.now() - startedAt };
 }
 
+/** Does the command read like several steps ("X and Y", "X, then Y")? Only those get follow-up turns. */
+export function looksMultiStep(text: string): boolean {
+  return /,|\b(and|then|also|after|before|plus|next)\b/i.test(text);
+}
+
 /**
- * System 1 on OpenAI: one streaming chat completion that answers with tool calls only.
+ * System 1 on OpenAI: a streaming chat completion that answers with tool calls only.
  * Tool-call deltas are stitched together per index; a call is complete once the next one
  * starts (or the stream ends), and is validated and forwarded immediately.
+ *
+ * Some models (gpt-oss on Cerebras) ignore parallel_tool_calls and make ONE call per turn, so a
+ * multi-step command would stop after its first step. When a turn makes exactly one call and the
+ * command looks multi-step, the call is answered with a tool result and the model gets another turn.
+ * Models that do batch their calls (2+ in one turn) and single-step commands stay at one request.
+ * Each follow-up is another request, which counts against rate limits (Cerebras free tier is requests/minute);
+ * `maxTurns` caps them (1 = off). If a follow-up fails, the steps already emitted stay and an `error` event says why.
  */
 export async function runSystem1OpenAI(
   client: OpenAI,
@@ -42,60 +54,94 @@ export async function runSystem1OpenAI(
   signal?: AbortSignal,
   model = DEFAULT_OPENAI_MODEL,
   effort: ReasoningEffort = DEFAULT_EFFORT,
+  maxTurns = DEFAULT_MAX_TURNS,
+  describeError: (err: unknown) => string | undefined = () => undefined,
 ) {
   const startedAt = Date.now();
+  const multiStep = looksMultiStep(req.text);
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: buildUserMessage(req.text, req.scene) },
+  ];
   let count = 0;
-
-  const stream = await client.chat.completions.create(
-    {
-      model,
-      max_completion_tokens: 4096,
-      ...(effort !== "off" && openaiSupportsEffort(model) ? { reasoning_effort: effort } : {}),
-      stream: true,
-      tools: OPENAI_TOOLS,
-      tool_choice: "auto",
-      parallel_tool_calls: true,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserMessage(req.text, req.scene) },
-      ],
-    },
-    { signal },
-  );
-
-  const calls = new Map<number, PendingCall>();
-  let current = -1;
   let text = "";
   let finish: string | null = null;
   let actualModel = model;
 
-  const flush = (index: number) => {
-    const call = calls.get(index);
-    if (!call) return;
-    calls.delete(index);
-    const event = toolCallToEvent(call, startedAt);
-    if (event.type === "action") count++;
-    emit(event);
-  };
-
-  for await (const chunk of stream) {
-    actualModel = chunk.model || actualModel;
-    const choice = chunk.choices[0];
-    if (!choice) continue;
-    if (choice.delta.content) text += choice.delta.content;
-    for (const tc of choice.delta.tool_calls ?? []) {
-      if (tc.index !== current) {
-        if (current >= 0) flush(current);
-        current = tc.index;
-      }
-      const call = calls.get(tc.index) ?? { name: "", args: "" };
-      if (tc.function?.name) call.name += tc.function.name;
-      if (tc.function?.arguments) call.args += tc.function.arguments;
-      calls.set(tc.index, call);
+  for (let turn = 0; turn < maxTurns; turn++) {
+    let stream;
+    try {
+      stream = await client.chat.completions.create(
+        {
+          model,
+          max_completion_tokens: 4096,
+          ...(openaiEffortParam(model, effort) ? { reasoning_effort: openaiEffortParam(model, effort) } : {}),
+          stream: true,
+          tools: OPENAI_TOOLS,
+          tool_choice: "auto",
+          parallel_tool_calls: true,
+          messages,
+        },
+        { signal },
+      );
+    } catch (err) {
+      if (turn === 0 || signal?.aborted) throw err;
+      emit({ type: "error", message: `${describeError(err) ?? "Model request failed."} Only the first ${turn} step(s) were applied.` });
+      text = "";
+      finish = null;
+      break;
     }
-    if (choice.finish_reason) finish = choice.finish_reason;
+
+    const calls = new Map<number, PendingCall & { id: string; result?: string }>();
+    const order: number[] = [];
+    let current = -1;
+    text = "";
+    finish = null;
+
+    const flush = (index: number) => {
+      const call = calls.get(index);
+      if (!call || call.result !== undefined) return;
+      const event = toolCallToEvent(call, startedAt);
+      if (event.type === "action") count++;
+      call.result = event.type === "invalid" ? `error: ${event.error}` : "ok. Continue with the remaining steps of the command, if any.";
+      emit(event);
+    };
+
+    for await (const chunk of stream) {
+      actualModel = chunk.model || actualModel;
+      const choice = chunk.choices[0];
+      if (!choice) continue;
+      if (choice.delta.content) text += choice.delta.content;
+      for (const tc of choice.delta.tool_calls ?? []) {
+        if (tc.index !== current) {
+          if (current >= 0) flush(current);
+          current = tc.index;
+        }
+        let call = calls.get(tc.index);
+        if (!call) {
+          call = { id: "", name: "", args: "" };
+          calls.set(tc.index, call);
+          order.push(tc.index);
+        }
+        if (tc.id) call.id = tc.id;
+        if (tc.function?.name) call.name += tc.function.name;
+        if (tc.function?.arguments) call.args += tc.function.arguments;
+      }
+      if (choice.finish_reason) finish = choice.finish_reason;
+    }
+    if (current >= 0) flush(current);
+
+    // A single call on a multi-step command: answer it and let the model continue.
+    if (!(multiStep && finish === "tool_calls" && order.length === 1 && turn < maxTurns - 1)) break;
+    const done = order.map((i) => calls.get(i)!);
+    done.forEach((c, i) => (c.id ||= `call_${turn}_${i}`));
+    messages.push({
+      role: "assistant",
+      content: text.trim() || null,
+      tool_calls: done.map((c) => ({ id: c.id, type: "function" as const, function: { name: c.name, arguments: c.args } })),
+    });
+    for (const c of done) messages.push({ role: "tool", tool_call_id: c.id, content: c.result ?? "ok" });
   }
-  if (current >= 0) flush(current);
 
   if (text.trim()) emit({ type: "say", text: text.trim() });
   if (finish === "content_filter") {

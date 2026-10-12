@@ -81,7 +81,8 @@ In dev builds, `window.__board.apply(text, actions)` feeds actions through the s
 | `OPENAI_API_KEY` | — | OpenAI key; stays server-side. Set either key (at least one is required for commands) |
 | `OPENAI_BASE_URL` | OpenAI | Use another OpenAI-compatible API, e.g. `https://api.cerebras.ai/v1` (put that service's key in `OPENAI_API_KEY`, set `LLM_PROVIDER=openai` and `SYSTEM1_MODEL` to one of its model ids) |
 | `LLM_PROVIDER` | auto | `anthropic` or `openai`. By default the provider whose key is set is used, Anthropic if both |
-| `REASONING_EFFORT` | `low` | `low`, `medium`, `high` or `off`. Sent as `reasoning_effort` (OpenAI-compatible, e.g. gpt-oss/gpt-5/o-series) or `output_config.effort` (newer Claude models); ignored for models that don't support it (gpt-4.1-mini, Haiku 4.5) |
+| `REASONING_EFFORT` | `low` | `low`, `medium`, `high` or `off`. Sent as `reasoning_effort` (OpenAI-compatible, e.g. gpt-oss/gpt-5/o-series/Cerebras qwen-3.8; `off` is sent as `none` to Qwen, nothing to the others) or `output_config.effort` (newer Claude models); ignored for models that don't support it (gpt-4.1-mini, Haiku 4.5) |
+| `SYSTEM1_MAX_TURNS` | `6` | OpenAI-compatible providers only. Some models (gpt-oss on Cerebras) make one tool call per request, so a command like "draw a tree and a flower" gets extra requests, one per step. Lower it, or set `1`, if you hit a requests-per-minute limit (Cerebras free tier). |
 | `SYSTEM1_MODEL` | `claude-haiku-4-5` / `gpt-4.1-mini` | Fast-path model (default depends on the provider) |
 | `PORT` | `8787` | Server port (Vite proxies `/api` to it) |
 | `FASTPATH_URL` | — | Local fast-path sidecar, e.g. `http://127.0.0.1:8788`. Unset = every command goes to the cloud model |

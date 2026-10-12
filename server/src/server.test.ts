@@ -4,11 +4,11 @@ import { describe, expect, it } from "vitest";
 import type { CommandEvent, CommandRequest } from "@board/shared";
 import { buildApp } from "./app";
 import { fastPathFromEnv, httpFastPath, withFastPath, type FastDecision } from "./fastpath";
-import { anthropicSupportsEffort, effortFromEnv, openaiSupportsEffort } from "./effort";
+import { anthropicSupportsEffort, effortFromEnv, maxTurnsFromEnv, openaiEffortParam, openaiSupportsEffort } from "./effort";
 import { anthropicProvider, openaiClientFromEnv, openaiProvider, providerFromEnv } from "./provider";
 import { buildUserMessage } from "./prompt";
 import { TOOLS, blockToEvents } from "./system1";
-import { OPENAI_TOOLS, toolCallToEvent } from "./system1-openai";
+import { OPENAI_TOOLS, looksMultiStep, toolCallToEvent } from "./system1-openai";
 
 const scene: CommandRequest["scene"] = {
   elements: [{ id: "api", type: "rectangle", label: "API", x: 10, y: 20, w: 180, h: 84 }],
@@ -163,6 +163,30 @@ function fakeOpenAI(deltas: Delta[], finish_reason: string = "tool_calls") {
   return { client: client as unknown as OpenAI, calls };
 }
 
+/** Like fakeOpenAI, but request N replays turns[N] (a turn that is an Error is thrown instead of streamed). */
+function fakeOpenAITurns(turns: (Delta[] | Error)[]) {
+  const calls: { messages: { role: string }[] }[] = [];
+  const client = {
+    chat: {
+      completions: {
+        async create(params: { messages: { role: string }[] }) {
+          const turn = turns[calls.length] ?? [];
+          calls.push({ messages: [...params.messages] });
+          if (turn instanceof Error) throw turn;
+          return (async function* () {
+            for (const delta of turn) yield { model: "fake-gpt", choices: [{ index: 0, delta, finish_reason: null }] };
+            yield {
+              model: "fake-gpt",
+              choices: [{ index: 0, delta: {}, finish_reason: turn.some((d) => d.tool_calls) ? "tool_calls" : "stop" }],
+            };
+          })();
+        },
+      },
+    },
+  };
+  return { client: client as unknown as OpenAI, calls };
+}
+
 const fn = (index: number, name?: string, args?: string): Delta => ({
   tool_calls: [{ index, ...(name ? { id: `c${index}`, type: "function" as const } : {}), function: { name, arguments: args } }],
 });
@@ -214,6 +238,55 @@ describe("POST /api/command (OpenAI)", () => {
   });
 });
 
+describe("OpenAI follow-up turns (models that make one tool call per turn)", () => {
+  const run = (client: OpenAI, text: string, maxTurns?: number) =>
+    buildApp(openaiProvider(client, "m", true, "off", maxTurns), { logger: false })
+      .inject({ method: "POST", url: "/api/command", payload: { text, scene } })
+      .then((res) => parseSse(res.body));
+
+  it("answers a lone call with a tool result and asks again until the model stops", async () => {
+    const { client, calls } = fakeOpenAITurns([
+      [fn(0, "add_object", '{"id":"tree","object":"tree"}')],
+      [fn(0, "add_object", '{"id":"flower","object":"flower"}')],
+      [{ content: "Done." }],
+    ]);
+    const events = await run(client, "draw a tree and flower");
+    expect(events.map((e) => e.type)).toEqual(["route", "action", "action", "say", "done"]);
+    expect(events.at(-1)).toMatchObject({ type: "done", actions: 2 });
+    expect(calls).toHaveLength(3);
+    expect(calls[1]!.messages.map((m) => m.role)).toEqual(["system", "user", "assistant", "tool"]);
+    expect(calls[2]!.messages.map((m) => m.role)).toEqual(["system", "user", "assistant", "tool", "assistant", "tool"]);
+  });
+
+  it("does not follow up single-step commands, batched calls or when maxTurns is 1", async () => {
+    const one = [fn(0, "add_object", '{"id":"tree","object":"tree"}')];
+    expect(await run(fakeOpenAITurns([one]).client, "draw a tree")).toHaveLength(3);
+    const batched = fakeOpenAITurns([[...one, fn(1, "add_object", '{"id":"flower","object":"flower"}')]]);
+    await run(batched.client, "draw a tree and flower");
+    expect(batched.calls).toHaveLength(1);
+    const capped = fakeOpenAITurns([one]);
+    await run(capped.client, "draw a tree and flower", 1);
+    expect(capped.calls).toHaveLength(1);
+  });
+
+  it("keeps the applied steps and reports the problem when a follow-up request fails", async () => {
+    const { client } = fakeOpenAITurns([[fn(0, "add_object", '{"id":"tree","object":"tree"}')], new Error("boom")]);
+    const events = await run(client, "draw a tree and flower");
+    expect(events.map((e) => e.type)).toEqual(["route", "action", "error", "done"]);
+    expect(events[2]).toMatchObject({ message: expect.stringContaining("first 1 step") });
+    expect(events.at(-1)).toMatchObject({ actions: 1 });
+  });
+
+  it("detects multi-step wording and parses SYSTEM1_MAX_TURNS", () => {
+    expect(looksMultiStep("enlarge boy and draw flower")).toBe(true);
+    expect(looksMultiStep("draw a house, a car")).toBe(true);
+    expect(looksMultiStep("draw a tree")).toBe(false);
+    expect(maxTurnsFromEnv({})).toBe(6);
+    expect(maxTurnsFromEnv({ SYSTEM1_MAX_TURNS: "1" })).toBe(1);
+    expect(() => maxTurnsFromEnv({ SYSTEM1_MAX_TURNS: "0" })).toThrow(/SYSTEM1_MAX_TURNS/);
+  });
+});
+
 describe("reasoning effort", () => {
   it("defaults to low and validates REASONING_EFFORT", () => {
     expect(effortFromEnv({})).toBe("low");
@@ -224,6 +297,11 @@ describe("reasoning effort", () => {
   it("only knows which models accept it", () => {
     expect(openaiSupportsEffort("gpt-oss-120b")).toBe(true);
     expect(openaiSupportsEffort("gpt-5-mini")).toBe(true);
+    expect(openaiSupportsEffort("qwen-3.8-27b")).toBe(true);
+    expect(openaiEffortParam("qwen-3.8-27b", "off")).toBe("none");
+    expect(openaiEffortParam("qwen-3.8-27b", "low")).toBe("low");
+    expect(openaiEffortParam("gpt-oss-120b", "off")).toBeUndefined();
+    expect(openaiEffortParam("gpt-4.1-mini", "high")).toBeUndefined();
     expect(openaiSupportsEffort("gpt-4.1-mini")).toBe(false);
     expect(anthropicSupportsEffort("claude-sonnet-5-5")).toBe(true);
     expect(anthropicSupportsEffort("claude-haiku-4-5")).toBe(false);
