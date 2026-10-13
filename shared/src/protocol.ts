@@ -23,9 +23,58 @@ export interface SceneSummary {
   viewport: { x: number; y: number; width: number; height: number };
 }
 
+/** How add_object names its picture: "enum" = curated list in the tool, "text" = free text mapped on the server. */
+export type ObjectMode = "enum" | "text";
+export type ReasoningEffort = "off" | "low" | "medium" | "high";
+/** The two API styles the server speaks; every OpenAI-compatible service (Cerebras, xAI, Groq...) is "openai". */
+export type ApiStyle = "anthropic" | "openai";
+
+/**
+ * Model settings from the browser (Settings panel, saved in localStorage per base URL). Every field
+ * overrides the server's .env; a missing one falls back to it. Without `provider` the .env endpoint is used.
+ * The server's own API key is only ever sent to the endpoint .env configures it for.
+ */
+export interface ModelConfig {
+  provider?: ApiStyle;
+  /** Empty = the provider's official API. */
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  effort?: ReasoningEffort;
+  objectMode?: ObjectMode;
+}
+
 export interface CommandRequest {
   text: string;
   scene: SceneSummary;
+  config?: ModelConfig;
+}
+
+/** GET /api/health: the server's .env defaults (never its keys). */
+export interface HealthInfo {
+  ok: boolean;
+  provider: ApiStyle;
+  model: string;
+  /** The .env endpoint; empty = the provider's official API. */
+  baseUrl: string;
+  hasKey: boolean;
+  /** Endpoints the server has a key for ("anthropic" or "openai" + base URL, see endpointKey). */
+  keyedEndpoints: string[];
+  effort: ReasoningEffort;
+  objectMode: ObjectMode;
+  fastPath: boolean;
+}
+
+/** Official API base URLs, used when a config leaves baseUrl empty. */
+export const DEFAULT_BASE_URLS: Record<ApiStyle, string> = {
+  anthropic: "https://api.anthropic.com",
+  openai: "https://api.openai.com/v1",
+};
+
+/** A canonical "style base-url" string, so "https://api.x.ai/v1/" and "https://api.x.ai/v1" are one endpoint. */
+export function endpointKey(provider: ApiStyle, baseUrl?: string): string {
+  const url = (baseUrl?.trim() || DEFAULT_BASE_URLS[provider]).replace(/\/+$/, "").toLowerCase();
+  return `${provider} ${url}`;
 }
 
 /**
@@ -36,7 +85,7 @@ export type CommandSource = "local" | "cloud";
 
 /** Server -> client events, sent as SSE `data:` lines. */
 export type CommandEvent =
-  | { type: "route"; source: CommandSource; model: string; detail: string; ms: number }
+  | { type: "route"; source: CommandSource; model: string; detail: string; ms: number; objects?: ObjectMode }
   | { type: "action"; action: BoardAction; ms: number }
   | { type: "say"; text: string }
   | { type: "invalid"; name: string; error: string }

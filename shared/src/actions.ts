@@ -1,5 +1,6 @@
 import { z } from "zod";
 import objects from "../objects.json";
+import moreObjects from "../objects-more.json";
 
 /**
  * Board actions are the typed "System 1" decisions: every voice/text command
@@ -50,15 +51,46 @@ export const AddShape = z.object({
   placement: Placement.optional(),
 });
 
-/** Clip-art the board can draw (shared/objects.json; images in web/public/objects, made by web/scripts/build-objects.mjs). */
+/**
+ * Clip-art the board can draw (images in web/public/objects, made by web/scripts/build-objects.mjs):
+ * the hand-curated catalog (shared/objects.json, the OBJECT_MODE=enum list) plus the rest of the icon
+ * library (shared/objects-more.json, generated, named after the icon), which OBJECT_MODE=text can also reach.
+ */
 export type ObjectName = keyof typeof objects;
 export const OBJECT_NAMES = Object.keys(objects) as [ObjectName, ...ObjectName[]];
+export const OBJECT_CATALOG: Record<ObjectName, { icon: string; aliases: string[] }> = objects;
+export const MORE_OBJECT_NAMES: readonly string[] = moreObjects;
+export const ALL_OBJECT_NAMES = [...OBJECT_NAMES, ...MORE_OBJECT_NAMES] as [string, ...string[]];
 
-export const AddObject = z.object({
+const ObjectFields = {
   id: NewId.optional(),
-  object: z.enum(OBJECT_NAMES).describe("Which picture. Pick the closest one, e.g. 'kid' -> 'child', 'oak' -> 'tree'."),
   size: z.enum(["small", "medium", "large"]).optional(),
   placement: Placement.optional(),
+};
+
+/** The add_object tool in OBJECT_MODE=enum: the model picks one curated name. */
+export const AddObject = z.object({
+  id: ObjectFields.id,
+  object: z.enum(OBJECT_NAMES).describe("Which picture. Pick the closest one, e.g. 'kid' -> 'child', 'oak' -> 'tree'."),
+  size: ObjectFields.size,
+  placement: ObjectFields.placement,
+});
+
+/** What add_object validates as (ACTION_SCHEMAS): any curated or library name. */
+export const AddObjectAny = z.object({ ...ObjectFields, object: z.enum(ALL_OBJECT_NAMES) });
+
+/**
+ * add_object with a free-text `object` (OBJECT_MODE=text): the catalog stays out of the prompt and the
+ * server maps the word to a catalog or library name (server/src/objects.ts) before it is validated.
+ */
+export const AddObjectText = AddObject.extend({
+  object: z
+    .string()
+    .min(1)
+    .max(60)
+    .describe(
+      "The thing to draw as a plain common noun, e.g. 'dog', 'tree', 'laptop', 'old woman'. If no picture fits, a labelled box is drawn.",
+    ),
 });
 
 export const AddText = z.object({
@@ -135,7 +167,7 @@ export const ClearBoard = z.object({
 
 export const ACTION_SCHEMAS = {
   add_shape: AddShape,
-  add_object: AddObject,
+  add_object: AddObjectAny,
   add_text: AddText,
   add_arrow: AddArrow,
   add_dimension: AddDimension,

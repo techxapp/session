@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { CommandEvent, CommandSource } from "@board/shared";
+import type { CommandEvent, CommandSource, ModelConfig, ObjectMode } from "@board/shared";
 import { streamCommand } from "../api";
 import { playAnimation } from "./animate";
 import { ActionError, applyAction, isTopLevel } from "./executor";
@@ -21,12 +21,13 @@ export interface LogEntry {
   totalMs?: number;
   notes: { kind: "say" | "warn" | "error"; text: string }[];
   /** Which model decided the command (local fast path or cloud LLM) and why; set as soon as the server knows. */
-  source?: { kind: CommandSource; model: string; detail: string; ms: number };
+  source?: { kind: CommandSource; model: string; detail: string; ms: number; objects?: ObjectMode };
 }
 
 type Snapshot = readonly ExcalidrawElement[];
 
-export function useCommandRunner(api: ExcalidrawImperativeAPI | null) {
+/** `getConfig` returns the Settings panel's model config for each command (undefined = the server's .env). */
+export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig: () => ModelConfig | undefined = () => undefined) {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [running, setRunning] = useState(false);
   const recentIds = useRef<string[]>([]);
@@ -104,7 +105,7 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null) {
               update(id, (e) => ({ ...e, notes: [...e.notes, { kind: "warn", text: msg }] }));
             }
           } else if (ev.type === "route") {
-            update(id, (e) => ({ ...e, source: { kind: ev.source, model: ev.model, detail: ev.detail, ms: ev.ms } }));
+            update(id, (e) => ({ ...e, source: { kind: ev.source, model: ev.model, detail: ev.detail, ms: ev.ms, objects: ev.objects } }));
           } else if (ev.type === "say") {
             update(id, (e) => ({ ...e, notes: [...e.notes, { kind: "say", text: ev.text }] }));
           } else if (ev.type === "invalid") {
@@ -156,9 +157,9 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null) {
         recentIds.current,
         visibleArea(api.getAppState()),
       );
-      return consume(text, streamCommand({ text, scene }, controller.signal), controller);
+      return consume(text, streamCommand({ text, scene, config: getConfig() }, controller.signal), controller);
     },
-    [api, consume],
+    [api, consume, getConfig],
   );
 
   const cancel = useCallback(() => {

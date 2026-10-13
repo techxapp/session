@@ -5,10 +5,19 @@ import type { CommandEvent, CommandRequest } from "@board/shared";
 import { buildApp } from "./app";
 import { fastPathFromEnv, httpFastPath, withFastPath, type FastDecision } from "./fastpath";
 import { anthropicSupportsEffort, effortFromEnv, maxTurnsFromEnv, openaiEffortParam, openaiSupportsEffort } from "./effort";
-import { anthropicProvider, openaiClientFromEnv, openaiProvider, providerFromEnv } from "./provider";
+import {
+  anthropicProvider,
+  buildProvider,
+  listModels,
+  openaiClientFromEnv,
+  openaiProvider,
+  providerFromEnv,
+  settingsFromEnv,
+  type ClientFactory,
+} from "./provider";
 import { buildUserMessage } from "./prompt";
-import { TOOLS, blockToEvents } from "./system1";
-import { OPENAI_TOOLS, looksMultiStep, toolCallToEvent } from "./system1-openai";
+import { TOOLS, TOOLS_BY_MODE, blockToEvents } from "./system1";
+import { OPENAI_TOOLS, OPENAI_TOOLS_BY_MODE, looksMultiStep, toolCallToEvent } from "./system1-openai";
 
 const scene: CommandRequest["scene"] = {
   elements: [{ id: "api", type: "rectangle", label: "API", x: 10, y: 20, w: 180, h: 84 }],
@@ -74,6 +83,17 @@ describe("tool definitions", () => {
       enum: ["rectangle", "ellipse", "diamond", "sticky"],
     });
   });
+
+  it("list the catalog in add_object only in enum mode", () => {
+    const objectProp = (tools: Anthropic.Tool[]) =>
+      (tools.find((t) => t.name === "add_object")!.input_schema.properties as Record<string, { enum?: string[]; type?: string }>).object;
+    expect(objectProp(TOOLS_BY_MODE.enum).enum).toContain("tree");
+    expect(objectProp(TOOLS_BY_MODE.text)).toMatchObject({ type: "string" });
+    expect(objectProp(TOOLS_BY_MODE.text).enum).toBeUndefined();
+    expect(JSON.stringify(TOOLS_BY_MODE.text).length).toBeLessThan(JSON.stringify(TOOLS_BY_MODE.enum).length - 1500);
+    expect(TOOLS_BY_MODE.text.map((t) => t.name)).toEqual(TOOLS.map((t) => t.name));
+    expect(OPENAI_TOOLS_BY_MODE.text.map((t) => t.function.name)).toEqual(TOOLS.map((t) => t.name));
+  });
 });
 
 describe("blockToEvents", () => {
@@ -120,6 +140,22 @@ describe("POST /api/command", () => {
     expect(events[0]).toMatchObject({ type: "route", source: "cloud", model: "claude-haiku-4-5" });
     expect(events.at(-1)).toMatchObject({ type: "done", actions: 2, model: "fake-model" });
     expect(calls[0]).toMatchObject({ model: "claude-haiku-4-5", tool_choice: { type: "auto" } });
+  });
+
+  it("in OBJECT_MODE=text sends free-text tools and maps objects to the catalog or a box", async () => {
+    const { client, calls } = fakeClient([
+      toolUse("add_object", { id: "pup", object: "puppies" }),
+      toolUse("add_object", { id: "tower", object: "skyscraper" }),
+    ]);
+    const res = await buildApp(anthropicProvider(client, undefined, true, "low", "text"), { logger: false }).inject({
+      method: "POST",
+      url: "/api/command",
+      payload: { text: "draw a puppy and a skyscraper", scene },
+    });
+    const events = parseSse(res.body);
+    expect(events[1]).toMatchObject({ action: { name: "add_object", input: { id: "pup", object: "dog" } } });
+    expect(events[2]).toMatchObject({ action: { name: "add_shape", input: { id: "tower", kind: "rectangle", label: "skyscraper" } } });
+    expect((calls[0] as { tools: unknown }).tools).toBe(TOOLS_BY_MODE.text);
   });
 
   it("reports refusals", async () => {
@@ -349,6 +385,115 @@ describe("providerFromEnv", () => {
   });
   it("rejects an unknown provider", () => {
     expect(() => providerFromEnv({ LLM_PROVIDER: "gemini" })).toThrow(/LLM_PROVIDER/);
+    expect(() => providerFromEnv({ OBJECT_MODE: "fuzzy" })).toThrow(/OBJECT_MODE/);
+  });
+});
+
+describe("request config (UI settings over .env)", () => {
+  /** Records the options each client was built with; the clients are fakes that replay `blocks`. */
+  function factory(blocks: Anthropic.ContentBlock[] = []) {
+    const built: { style: string; apiKey: string; baseURL?: string }[] = [];
+    const f: ClientFactory = {
+      anthropic: (o) => (built.push({ style: "anthropic", ...o }), fakeClient(blocks).client),
+      openai: (o) => {
+        built.push({ style: "openai", ...o });
+        const client = fakeOpenAI([]).client as unknown as { models: unknown };
+        client.models = {
+          list: async function* () {
+            yield { id: "m-b" };
+            yield { id: "m-a" };
+          },
+        };
+        return client as unknown as OpenAI;
+      },
+    };
+    return { f, built };
+  }
+  const env = {
+    ANTHROPIC_API_KEY: "env-anthropic",
+    OPENAI_API_KEY: "env-cerebras",
+    OPENAI_BASE_URL: "https://api.cerebras.ai/v1",
+    SYSTEM1_MODEL: "env-model",
+  };
+
+  it("sends the .env key only to the endpoint .env sets it for", () => {
+    const s = settingsFromEnv(env);
+    const { f, built } = factory();
+    expect(buildProvider(s, {}, f)).toMatchObject({ name: "anthropic", hasKey: true, model: "env-model" });
+    buildProvider(s, { provider: "openai", baseUrl: "https://api.cerebras.ai/v1/", model: "gpt-oss-120b" }, f);
+    const other = buildProvider(s, { provider: "openai", baseUrl: "https://evil.example/v1", model: "x" }, f);
+    expect(built.map((b) => b.apiKey)).toEqual(["env-anthropic", "env-cerebras", "missing"]);
+    expect(other.hasKey).toBe(false);
+  });
+
+  it("uses the browser's key, model, effort and object mode over .env", () => {
+    const { f, built } = factory();
+    const p = buildProvider(
+      settingsFromEnv(env),
+      { provider: "openai", baseUrl: "https://api.x.ai/v1", apiKey: "mine", model: "grok-x", objectMode: "text" },
+      f,
+    );
+    expect(p).toMatchObject({ name: "openai", model: "grok-x", hasKey: true, objects: "text" });
+    expect(built[0]).toEqual({ style: "openai", apiKey: "mine", baseURL: "https://api.x.ai/v1" });
+  });
+
+  it("falls back to SYSTEM1_MODEL only on the .env endpoint, and needs a model elsewhere", () => {
+    const s = settingsFromEnv(env);
+    const { f } = factory();
+    expect(buildProvider(s, { provider: "anthropic" }, f).model).toBe("env-model");
+    expect(buildProvider(s, { provider: "openai" }, f).model).toBe("gpt-4.1-mini");
+    expect(() => buildProvider(s, { provider: "openai", baseUrl: "https://api.groq.com/openai/v1" }, f)).toThrow(/Choose a model/);
+  });
+
+  it("runs a command with the request's config and reports the object mode on the route event", async () => {
+    const s = settingsFromEnv(env);
+    const { f, built } = factory([toolUse("add_object", { object: "kangaroo" })]);
+    const app = buildApp(anthropicProvider(fakeClient([]).client), { logger: false, forConfig: (c) => buildProvider(s, c, f) });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/command",
+      payload: { text: "draw a kangaroo", scene, config: { provider: "anthropic", apiKey: "k", objectMode: "text" } },
+    });
+    const events = parseSse(res.body);
+    expect(events[0]).toMatchObject({ type: "route", source: "cloud", model: "env-model", objects: "text" });
+    expect(events[1]).toMatchObject({ action: { name: "add_object", input: { object: "kangaroo" } } });
+    expect(built[0].apiKey).toBe("k");
+  });
+
+  it("rejects a bad config with 400 before streaming", async () => {
+    const s = settingsFromEnv(env);
+    const app = buildApp(anthropicProvider(fakeClient([]).client), { logger: false, forConfig: (c) => buildProvider(s, c, factory().f) });
+    const post = (config: unknown) => app.inject({ method: "POST", url: "/api/command", payload: { text: "x", scene, config } });
+    expect((await post({ provider: "openai", baseUrl: "ftp://x" })).statusCode).toBe(400);
+    const noModel = await post({ provider: "openai", baseUrl: "https://api.groq.com/openai/v1" });
+    expect(noModel.statusCode).toBe(400);
+    expect(noModel.json().error).toMatch(/Choose a model/);
+  });
+
+  it("lists an endpoint's models, and refuses without a key", async () => {
+    const s = settingsFromEnv(env);
+    const { f } = factory();
+    expect(await listModels(s, { provider: "openai", baseUrl: "https://api.cerebras.ai/v1" }, f)).toEqual(["m-a", "m-b"]);
+    await expect(listModels(s, { provider: "openai", baseUrl: "https://api.x.ai/v1" }, f)).rejects.toThrow(/No API key/);
+    const app = buildApp(anthropicProvider(fakeClient([]).client), { logger: false, listModels: (c) => listModels(s, c, f) });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/models",
+      payload: { config: { provider: "openai", baseUrl: "https://api.x.ai/v1" } },
+    });
+    expect(res.statusCode).toBe(502);
+  });
+
+  it("reports the .env defaults on /api/health without any key", async () => {
+    const s = settingsFromEnv({ ...env, LLM_PROVIDER: "openai", OBJECT_MODE: "text" });
+    const app = buildApp(providerFromEnv({ ...env, LLM_PROVIDER: "openai", OBJECT_MODE: "text" }), {
+      logger: false,
+      info: { baseUrl: s.baseUrl, keyedEndpoints: [...s.keys.keys()], effort: s.effort },
+    });
+    const health = (await app.inject({ method: "GET", url: "/api/health" })).json();
+    expect(health).toMatchObject({ provider: "openai", baseUrl: "https://api.cerebras.ai/v1", objectMode: "text", effort: "low" });
+    expect(health.keyedEndpoints).toEqual(["anthropic https://api.anthropic.com", "openai https://api.cerebras.ai/v1"]);
+    expect(JSON.stringify(health)).not.toMatch(/env-anthropic|env-cerebras/);
   });
 });
 

@@ -170,7 +170,7 @@ def words(text: str) -> list[str]:
 
 # Clip-art the LLM can draw with add_object (shared/objects.json): every name and alias -> object name.
 _CATALOG = json.loads((Path(__file__).resolve().parent.parent / "shared" / "objects.json").read_text(encoding="utf-8"))
-# Longest first, so "pine tree" wins over "tree".
+# Longest first, so "police car" wins over "car".
 OBJECT_WORDS = dict(sorted(((w, n) for n, o in _CATALOG.items() for w in (n, *o["aliases"])), key=lambda p: -len(p[0])))
 EDIT_ACTIONS = SET_ACTIONS | {"undo_last_command", "clear_board"}
 

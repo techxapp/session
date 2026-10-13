@@ -2,13 +2,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Excalidraw, MainMenu, THEME } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { BoardAction, CommandEvent } from "@board/shared";
+import type { BoardAction, CommandEvent, HealthInfo } from "@board/shared";
+import { Settings2 } from "lucide-react";
 import { checkHealth } from "./api";
 import { loadObjectFiles } from "./board/objects";
 import { useCommandRunner } from "./board/useCommandRunner";
 import { ActivityPanel } from "./components/ActivityPanel";
 import { CommandDock } from "./components/CommandDock";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPill, type ServerStatus } from "./components/StatusPill";
+import {
+  activeChoice,
+  activeProfile,
+  effectiveModel,
+  loadSettings,
+  requestConfig,
+  saveSettings,
+  serverHasKey,
+  type Settings,
+} from "./settings";
 
 const STORAGE_KEY = "voice-board:scene:v1";
 
@@ -29,8 +41,31 @@ export default function App() {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(prefersDark() ? "dark" : "light");
   const [boardEmpty, setBoardEmpty] = useState(true);
-  const [status, setStatus] = useState<ServerStatus>({ state: "checking" });
-  const runner = useCommandRunner(api);
+  // undefined = still checking, null = server offline.
+  const [health, setHealth] = useState<HealthInfo | null | undefined>(undefined);
+  const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => saveSettings(settings), [settings]);
+  const updateSettings = useCallback((fn: (s: Settings) => Settings) => setSettings(fn), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+
+  // Each command carries the Settings panel's config (read at send time, so the runner needn't re-render).
+  const latest = useRef({ settings, health });
+  latest.current = { settings, health };
+  const getConfig = useCallback(() => requestConfig(latest.current.settings, latest.current.health ?? null), []);
+  const runner = useCommandRunner(api, getConfig);
+
+  const status: ServerStatus = useMemo(() => {
+    if (health === undefined) return { state: "checking" };
+    if (health === null) return { state: "offline" };
+    const choice = activeChoice(settings);
+    const model = effectiveModel(settings, health) ?? "no model";
+    const keyed = Boolean(activeProfile(settings).apiKey) || serverHasKey(choice, health);
+    const where = choice ? choice.label : undefined;
+    return keyed
+      ? { state: "ready", model, where, fastPath: health.fastPath }
+      : { state: "no-key", model, where, fastPath: health.fastPath };
+  }, [health, settings]);
   const initialData = useMemo(() => {
     const elements = loadScene();
     return { elements: elements ?? [], appState: { theme: prefersDark() ? THEME.DARK : THEME.LIGHT } };
@@ -49,14 +84,7 @@ export default function App() {
     let alive = true;
     const poll = async () => {
       const h = await checkHealth();
-      if (!alive) return;
-      setStatus(
-        !h
-          ? { state: "offline" }
-          : h.hasKey
-            ? { state: "ready", model: h.model, fastPath: Boolean(h.fastPath) }
-            : { state: "no-key", model: h.model, fastPath: Boolean(h.fastPath) },
-      );
+      if (alive) setHealth(h);
     };
     poll();
     const t = setInterval(poll, 15000);
@@ -114,7 +142,20 @@ export default function App() {
         initialData={initialData}
         onChange={onChange}
         theme={theme}
-        renderTopRightUI={() => <StatusPill status={status} />}
+        renderTopRightUI={() => (
+          <div className="top-right">
+            <StatusPill status={status} />
+            <button
+              className={`settings-toggle${settingsOpen ? " is-open" : ""}`}
+              onClick={() => setSettingsOpen((o) => !o)}
+              aria-label="Model settings"
+              aria-expanded={settingsOpen}
+              title="Model settings"
+            >
+              <Settings2 size={16} />
+            </button>
+          </div>
+        )}
         UIOptions={{ canvasActions: { loadScene: true, saveToActiveFile: false, export: { saveFileToDisk: true } } }}
       >
         <MainMenu>
@@ -138,6 +179,8 @@ export default function App() {
           </p>
         </div>
       )}
+
+      {settingsOpen && <SettingsPanel settings={settings} health={health ?? null} update={updateSettings} onClose={closeSettings} />}
 
       <ActivityPanel log={runner.log} running={runner.running} onUndo={runner.undo} />
 

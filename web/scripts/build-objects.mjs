@@ -1,36 +1,64 @@
-// Write web/public/objects/*.svg (clip-art for the add_object action) from shared/objects.json, using the
-// icon set pinned in web/package.json: Microsoft Fluent Emoji (Flat), MIT, as Iconify JSON. Runs on
-// predev/prebuild like copy-fonts.mjs; the output is gitignored and works offline once npm install has run.
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+// Write web/public/objects/*.svg (clip-art for the add_object action) using the icon set pinned in
+// web/package.json: Microsoft Fluent Emoji (Flat), MIT, as Iconify JSON. Runs on predev/prebuild like
+// copy-fonts.mjs; the SVGs are gitignored and work offline once npm install has run.
+//
+// Two catalogs: shared/objects.json (hand-curated names + aliases, the OBJECT_MODE=enum list) and
+// shared/objects-more.json (every other icon, skin-tone variants left out, named after the icon), which
+// this script regenerates. Both are committed so the server needs no icon package; text mode matches both.
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PACKAGE = "@iconify-json/fluent-emoji-flat";
 const SIZE = 256; // intrinsic px size; the art is vector, this only sets the default raster size
+const TONE = /-(light|medium-light|medium|medium-dark|dark)$/; // skin-tone variants: "man-cook-dark"
 
 const require = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
 const catalog = JSON.parse(readFileSync(join(here, "../../shared/objects.json"), "utf8"));
+const morePath = join(here, "../../shared/objects-more.json");
 const outDir = join(here, "../public/objects");
 const set = require(`${PACKAGE}/icons.json`);
 const { version } = require(`${PACKAGE}/package.json`);
 
+// The rest of the library: icons the curated catalog doesn't use, named "icon-name" -> "icon name".
+// An icon whose name is a curated name is skipped (curated "dog" is the dog face on purpose).
+const icons = [...Object.keys(set.icons), ...Object.keys(set.aliases ?? {})];
+const known = new Set(icons);
+const used = new Set(Object.values(catalog).map((v) => v.icon));
+const more = icons
+  .filter((i) => !(TONE.test(i) && known.has(i.replace(TONE, ""))) && !used.has(i) && !(i.replace(/-/g, " ") in catalog))
+  .map((i) => i.replace(/-/g, " "))
+  .sort();
+const moreJson = JSON.stringify(more, null, 0).replace(/","/g, '",\n  "').replace(/^\[/, "[\n  ").replace(/\]$/, "\n]\n");
+if (!existsSync(morePath) || readFileSync(morePath, "utf8") !== moreJson) writeFileSync(morePath, moreJson);
+
+const entries = [
+  ...Object.entries(catalog).map(([name, { icon }]) => [name, icon]),
+  ...more.map((name) => [name, name.replace(/ /g, "-")]),
+];
+const files = new Set();
 mkdirSync(outDir, { recursive: true });
 for (const f of readdirSync(outDir)) if (f.endsWith(".svg")) rmSync(join(outDir, f));
 const missing = [];
-for (const [name, { icon }] of Object.entries(catalog)) {
-  const data = set.icons[icon] ?? set.icons[set.aliases?.[icon]?.parent];
+for (const [name, icon] of entries) {
+  const file = `${name.replace(/ /g, "-")}.svg`;
+  if (files.has(file)) throw new Error(`two objects map to ${file}`);
+  files.add(file);
+  const alias = set.aliases?.[icon];
+  const data = set.icons[icon] ?? set.icons[alias?.parent];
   if (!data) {
     missing.push(`${name} (${icon})`);
     continue;
   }
   const w = data.width ?? set.width;
   const h = data.height ?? set.height;
+  const body = alias?.hFlip ? `<g transform="translate(${w} 0) scale(-1 1)">${data.body}</g>` : data.body;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${Math.round((SIZE * h) / w)}" ` +
-    `viewBox="${data.left ?? 0} ${data.top ?? 0} ${w} ${h}">${data.body}</svg>\n`;
-  writeFileSync(join(outDir, `${name.replace(/ /g, "-")}.svg`), svg);
+    `viewBox="${data.left ?? 0} ${data.top ?? 0} ${w} ${h}">${body}</svg>\n`;
+  writeFileSync(join(outDir, file), svg);
 }
 writeFileSync(
   join(outDir, "LICENSE.md"),
@@ -38,4 +66,4 @@ writeFileSync(
     `Copyright (c) Microsoft Corporation. MIT License: https://github.com/microsoft/fluentui-emoji/blob/main/LICENSE\n`,
 );
 if (missing.length) throw new Error(`icons not in ${PACKAGE}@${version}: ${missing.join(", ")}`);
-console.log(`wrote ${Object.keys(catalog).length} objects -> ${outDir}`);
+console.log(`wrote ${Object.keys(catalog).length} catalog + ${more.length} more objects -> ${outDir}`);

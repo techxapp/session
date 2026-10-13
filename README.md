@@ -12,15 +12,28 @@ Requires Node 22+.
 
 ```bash
 npm install
-cp .env.example .env        # then set ANTHROPIC_API_KEY or OPENAI_API_KEY
+cp .env.example .env        # then set ANTHROPIC_API_KEY or OPENAI_API_KEY (or add a key in the app's Settings)
 npm run dev                 # server on :8787, web app on http://localhost:5173
 ```
 
 Try: *"Draw a login flow: user, web app, auth service, database"*, then *"make the database green and move it down"*, then *"undo"*.
 
-It can also draw everyday things: *"let's grab a tree"*, *"draw a man and a child next to the house"*, *"make the tree bigger"*. About 210 objects are built in (people, plants, animals, weather, food, buildings, vehicles, office items, symbols); the list is `shared/objects.json`.
+It can also draw everyday things: *"let's grab a tree"*, *"draw a man and a child next to the house"*, *"make the tree bigger"*. About 190 hand-picked objects are built in (people, plants, animals, weather, food, buildings, vehicles, office items, symbols; `shared/objects.json`). With object mode `text` the whole Fluent Emoji set, about 1,600 pictures, is available (`shared/objects-more.json`, generated).
 
 Without an API key the app still loads. The status pill shows **API key missing** and commands report a clear error.
+
+### Model settings (in the app)
+
+The gear button next to the status pill opens **Model settings**. They are saved in the browser (localStorage) and override `.env` for every command; anything left on *Default* uses `.env`.
+
+- **Provider**: *Server .env*, Anthropic, OpenAI, Cerebras, xAI, Groq or OpenRouter, or **+ Custom URL** for any other OpenAI-compatible API. Each base URL keeps its own saved key, model, effort and object mode, so switching back and forth keeps them.
+- **API key**: per provider. If `.env` already has a key for that endpoint, leave it empty and the server's key is used. The server only sends its `.env` keys to the endpoint `.env` configures them for, never to another URL.
+- **Model**: pick from the list (loaded from the provider's `/models` with the refresh button, or automatically the first time) or choose *Other…* to type an id.
+- **Reasoning effort** and **Objects** (`enum` / `text`): the same as `REASONING_EFFORT` and `OBJECT_MODE` below.
+
+Keys typed here are stored in plain text in this browser's localStorage and sent to this app's server with each command. That's fine for a local app; don't use it on a shared machine or a public deployment. On a public server, anyone could also use it to send requests to any URL.
+
+Each cloud command in the activity panel shows which object mode it used (`objects: enum` or `objects: text`).
 
 ## How it works
 
@@ -69,11 +82,13 @@ The checkpoint is produced by `eval/make_train.py` + `eval/train_laya.py` (see `
 | `npm test` | Executor tests (vitest + jsdom) and server tests (SSE route against a fake model stream) |
 | `npm run typecheck` | `tsc --noEmit` in every workspace |
 | `npm run format` | Prettier |
-| `npm run objects --workspace web` | Regenerate `web/public/objects/*.svg` from `shared/objects.json` (also runs automatically before dev and build) |
+| `npm run objects --workspace web` | Regenerate `shared/objects-more.json` and `web/public/objects/*.svg` from `shared/objects.json` and the icon package (also runs automatically before dev and build) |
 
 In dev builds, `window.__board.apply(text, actions)` feeds actions through the same path as the model. That's useful for demos and UI testing without an API key.
 
 ## Configuration (`.env`)
+
+The in-app Model settings (above) override these per browser.
 
 | Variable | Default | |
 |---|---|---|
@@ -82,6 +97,7 @@ In dev builds, `window.__board.apply(text, actions)` feeds actions through the s
 | `OPENAI_BASE_URL` | OpenAI | Use another OpenAI-compatible API, e.g. `https://api.cerebras.ai/v1` (put that service's key in `OPENAI_API_KEY`, set `LLM_PROVIDER=openai` and `SYSTEM1_MODEL` to one of its model ids) |
 | `LLM_PROVIDER` | auto | `anthropic` or `openai`. By default the provider whose key is set is used, Anthropic if both |
 | `REASONING_EFFORT` | `low` | `low`, `medium`, `high` or `off`. Sent as `reasoning_effort` (OpenAI-compatible, e.g. gpt-oss/gpt-5/o-series/Cerebras qwen-3.8; `off` is sent as `none` to Qwen, nothing to the others) or `output_config.effort` (newer Claude models); ignored for models that don't support it (gpt-4.1-mini, Haiku 4.5) |
+| `OBJECT_MODE` | `enum` | How the model names clip-art. `enum`: the `add_object` tool lists the ~190 curated objects, and the model picks one. `text`: the model writes a plain word ("puppy", "red sports car"), the server maps it to the curated objects or the rest of the icon set, about 1,600 pictures in all (names, aliases, plurals, the last word, one-letter typos), and draws a labelled box when nothing fits. `text` sends about 1,800 fewer characters per request. Known miss: the last-word rule can pick another sense ("cricket bat" draws the animal). |
 | `SYSTEM1_MAX_TURNS` | `6` | OpenAI-compatible providers only. Some models (gpt-oss on Cerebras) make one tool call per request, so a command like "draw a tree and a flower" gets extra requests, one per step. Lower it, or set `1`, if you hit a requests-per-minute limit (Cerebras free tier). |
 | `SYSTEM1_MODEL` | `claude-haiku-4-5` / `gpt-4.1-mini` | Fast-path model (default depends on the provider) |
 | `PORT` | `8787` | Server port (Vite proxies `/api` to it) |

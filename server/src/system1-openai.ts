@@ -1,16 +1,24 @@
+import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
-import { parseAction, type CommandRequest } from "@board/shared";
+import type { CommandRequest } from "@board/shared";
 import { DEFAULT_EFFORT, DEFAULT_MAX_TURNS, openaiEffortParam, type ReasoningEffort } from "./effort";
+import { DEFAULT_OBJECT_MODE, parseToolCall, type ObjectMode } from "./objects";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
-import { TOOLS, type Emit } from "./system1";
+import { TOOLS_BY_MODE, type Emit } from "./system1";
 
 export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 
 /** The same tool definitions as the Anthropic path, in OpenAI's function-calling shape. */
-export const OPENAI_TOOLS: OpenAI.Chat.Completions.ChatCompletionFunctionTool[] = TOOLS.map((t) => ({
-  type: "function",
-  function: { name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown> },
-}));
+const toOpenAI = (tools: Anthropic.Tool[]): OpenAI.Chat.Completions.ChatCompletionFunctionTool[] =>
+  tools.map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown> },
+  }));
+export const OPENAI_TOOLS_BY_MODE: Record<ObjectMode, OpenAI.Chat.Completions.ChatCompletionFunctionTool[]> = {
+  enum: toOpenAI(TOOLS_BY_MODE.enum),
+  text: toOpenAI(TOOLS_BY_MODE.text),
+};
+export const OPENAI_TOOLS = OPENAI_TOOLS_BY_MODE.enum;
 
 interface PendingCall {
   name: string;
@@ -18,14 +26,14 @@ interface PendingCall {
 }
 
 /** Validate one finished tool call into a client event. Exported for tests. */
-export function toolCallToEvent(call: PendingCall, startedAt: number) {
+export function toolCallToEvent(call: PendingCall, startedAt: number, objects: ObjectMode = DEFAULT_OBJECT_MODE) {
   let input: unknown;
   try {
     input = call.args.trim() ? JSON.parse(call.args) : {};
   } catch {
     return { type: "invalid" as const, name: call.name, error: "tool arguments were not valid JSON" };
   }
-  const parsed = parseAction(call.name, input);
+  const parsed = parseToolCall(call.name, input, objects);
   if (!parsed.ok) return { type: "invalid" as const, name: call.name, error: parsed.error };
   return { type: "action" as const, action: parsed.action, ms: Date.now() - startedAt };
 }
@@ -56,6 +64,7 @@ export async function runSystem1OpenAI(
   effort: ReasoningEffort = DEFAULT_EFFORT,
   maxTurns = DEFAULT_MAX_TURNS,
   describeError: (err: unknown) => string | undefined = () => undefined,
+  objects: ObjectMode = DEFAULT_OBJECT_MODE,
 ) {
   const startedAt = Date.now();
   const multiStep = looksMultiStep(req.text);
@@ -77,7 +86,7 @@ export async function runSystem1OpenAI(
           max_completion_tokens: 4096,
           ...(openaiEffortParam(model, effort) ? { reasoning_effort: openaiEffortParam(model, effort) } : {}),
           stream: true,
-          tools: OPENAI_TOOLS,
+          tools: OPENAI_TOOLS_BY_MODE[objects],
           tool_choice: "auto",
           parallel_tool_calls: true,
           messages,
@@ -101,7 +110,7 @@ export async function runSystem1OpenAI(
     const flush = (index: number) => {
       const call = calls.get(index);
       if (!call || call.result !== undefined) return;
-      const event = toolCallToEvent(call, startedAt);
+      const event = toolCallToEvent(call, startedAt, objects);
       if (event.type === "action") count++;
       call.result = event.type === "invalid" ? `error: ${event.error}` : "ok. Continue with the remaining steps of the command, if any.";
       emit(event);

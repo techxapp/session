@@ -1,5 +1,7 @@
+import type { ReasoningEffort } from "@board/shared";
+
 /** `off` sends no effort parameter, except `none` to Cerebras Qwen 3.8 (see openaiEffortParam). */
-export type ReasoningEffort = "off" | "low" | "medium" | "high";
+export type { ReasoningEffort };
 
 export const DEFAULT_EFFORT: ReasoningEffort = "low";
 

@@ -16,10 +16,10 @@ class ObjectCommand(unittest.TestCase):
             "Draw a tree.": ("tree", None, False),
             "add a big tree please": ("tree", "large", False),
             "can you put a small kid here": ("child", "small", False),
-            "um, add a pine tree on the board": ("pine tree", None, False),
+            "um, add a pine tree on the board": ("tree", None, False),
             "sketch me a dog": ("dog", None, False),
             "let's grab a tree": ("tree", None, True),
-            "I want a sunflower": ("sunflower", None, True),
+            "I want a sunflower": ("flower", None, True),
         }
         for text, (obj, size, casual) in cases.items():
             with self.subTest(text):
@@ -47,8 +47,8 @@ class ObjectCommand(unittest.TestCase):
         self.assertEqual(
             route_object(draw, None, 0.8), ("fast", [{"name": "add_object", "input": {"id": "tree", "object": "tree", "size": "large"}}], "add_object tree")
         )
-        self.assertEqual(object_command("add a pine tree")["object"], "pine tree")
-        self.assertEqual(route_object(object_command("add a pine tree"), None, 0.8)[1][0]["input"]["id"], "pine-tree")
+        self.assertEqual(object_command("add a police car")["object"], "police car")
+        self.assertEqual(route_object(object_command("add a police car"), None, 0.8)[1][0]["input"]["id"], "police-car")
         grab = object_command("let's grab a coffee")
         self.assertEqual(route_object(grab, YES, 0.8)[0], "fast")
         self.assertEqual(route_object(grab, UNSURE, 0.8)[0], "llm")

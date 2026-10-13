@@ -107,6 +107,7 @@ function ActivityRow({ entry, latest, onUndo }: { entry: LogEntry; latest: boole
           <div className={`note note-route note-${entry.source.kind}`}>
             {modelName(entry.source.model)} · {entry.source.detail}
             {entry.source.kind === "local" && entry.source.ms > 0 ? ` · ${fmt(entry.source.ms)}` : ""}
+            {entry.source.objects ? ` · objects: ${entry.source.objects}` : ""}
           </div>
         )}
         {entry.notes.map((n, i) => (

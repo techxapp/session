@@ -114,6 +114,229 @@ kbd {
   color: var(--bad);
 }
 
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-toggle {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+.settings-toggle:hover,
+.settings-toggle.is-open {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ---------- model settings (popover under the pill) ---------- */
+.settings {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 160px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius);
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  z-index: 6;
+  animation: rise 0.15s ease-out;
+  font-size: 13px;
+}
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font: 600 12.5px/1 var(--font-ui);
+}
+.settings-head span {
+  flex: 1;
+}
+.settings-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.settings-foot {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.field legend,
+.field-label {
+  padding: 0;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.field-label {
+  margin-bottom: 0;
+}
+.field-error {
+  color: var(--bad);
+  font-size: 12px;
+}
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: 500 12.5px/1.2 var(--font-ui);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.choice:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.choice.is-checked {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--accent-soft);
+}
+.choice:focus-within {
+  outline: 2px solid var(--accent-soft);
+}
+.choice-add {
+  border-style: dashed;
+}
+.choice-remove {
+  display: inline-grid;
+  place-items: center;
+  margin-right: -4px;
+  border-radius: 50%;
+  opacity: 0.6;
+}
+.choice-remove:hover {
+  opacity: 1;
+  color: var(--bad);
+}
+.input-row,
+.inline-form {
+  display: flex;
+  gap: 6px;
+}
+.inline-form {
+  margin-top: 8px;
+}
+.settings input:not([type="radio"]),
+.settings select {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text);
+  font: 450 13px/1 var(--font-ui);
+  outline: 0;
+}
+.settings input:focus,
+.settings select:focus {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.icon-btn,
+.small-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.icon-btn {
+  width: 32px;
+}
+.settings-head .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+.small-btn {
+  padding: 0 12px;
+  background: var(--accent);
+  color: #fff;
+  font: 600 12.5px/1 var(--font-ui);
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+.segmented button {
+  flex: 1 0 auto;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 500 12px/1 var(--font-ui);
+  cursor: pointer;
+}
+.segmented button.is-checked {
+  background: var(--surface-solid);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.12);
+}
+
 /* ---------- empty state ---------- */
 .empty-state {
   position: absolute;
