@@ -502,6 +502,16 @@ def has_scroll(cmd: Command) -> bool:
     return bool(SCROLL_WORDS & set(cmd.w))
 
 
+DIAGRAM_WORDS = {"diagram", "diagrams", "flowchart", "flowcharts", "architecture", "workflow", "pipeline", "hierarchy", "mindmap"}
+DIAGRAM_PHRASES = {"flow chart", "org chart", "mind map"}
+
+
+def has_diagram(cmd: Command) -> bool:
+    """A whole-diagram command. Laya has no generate_diagram and would draw one box."""
+    text = " ".join(cmd.w)
+    return bool(DIAGRAM_WORDS & set(cmd.w)) or any(p in text for p in DIAGRAM_PHRASES)
+
+
 TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, scroll, move, animate]
 
 
@@ -529,4 +539,6 @@ def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] |
         return "llm", None, "motion needs the LLM"
     if has_scroll(cmd):  # Laya has no scroll_view either
         return "llm", None, "scroll needs the LLM"
+    if has_diagram(cmd):  # nor generate_diagram
+        return "llm", None, "diagram needs the LLM"
     return None

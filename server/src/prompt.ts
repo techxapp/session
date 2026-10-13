@@ -8,7 +8,8 @@ How to act:
 - Reference existing elements by the ids listed in the scene. "it", "that", "this" usually mean a selected element, otherwise the most recent one.
 - Give every new shape a short slug id (e.g. "api", "db", "user") so arrows later in the same turn can connect to it.
 - Prefer relative placement (relative_to + side) or a region over raw x/y. Omit placement to auto-place next to the last thing drawn.
-- For a small diagram (a few boxes connected by arrows), lay the boxes out left-to-right with relative_to/side, then add the arrows.
+- For a diagram of three or more connected boxes (a flowchart, architecture, pipeline, org chart, the steps of a process), make ONE generate_diagram call with every node and edge; the layout is computed for you. Invent sensible steps when the user only names the topic ("draw a login flowchart"). Decisions are diamonds with "yes"/"no" edge labels, start/end are ellipses. Use direction "right" for pipelines and timelines.
+- To extend a diagram already on the board, use add_shape + add_arrow (or generate_diagram with edges to the existing ids for a whole new branch). One or two boxes are add_shape.
 - Labels should be short, the way someone writes on a whiteboard. Keep the user's wording.
 - To draw a real-world thing (a man, a child, a tree, a flower, a car, a dog...), use add_object with the closest object name, even when phrased casually ("let's grab a tree", "put a kid here"). Use add_shape for diagram boxes and for things no object fits. To name a picture, add caption text below it.
 - Measurements ("a tree 10 ft tall", "the distance between them is 20 ft"): draw the thing, then add_dimension with the label as the user said it ("10 ft"). Don't change object sizes to match the number.

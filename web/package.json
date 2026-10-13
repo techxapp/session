@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@board/shared": "^0.1.0",
+    "@dagrejs/dagre": "^3.1.1",
     "@excalidraw/excalidraw": "^0.18.1",
     "lucide-react": "^1.52.0",
     "react": "^18.3.1",

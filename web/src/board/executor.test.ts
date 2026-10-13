@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+﻿import { beforeAll, describe, expect, it } from "vitest";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BoardAction } from "@board/shared";
 import { ActionError, applyAction, isTopLevel, labelOf, type ExecContext } from "./executor";
@@ -47,6 +47,51 @@ describe("applyAction", () => {
     expect(arrow.type === "arrow" && arrow.endBinding?.elementId).toBe("web");
     expect(user.boundElements?.some((b) => b.id === arrow.id)).toBe(true);
     expect(labelOf(els, arrow)).toBe("HTTPS");
+  });
+
+  it("runs a backward arrow beside the forward one, keeps the lanes on move, and recentres on delete", () => {
+    const lineOf = (els: readonly ExcalidrawElement[], id: string) => {
+      const a = byId(els, id) as ExcalidrawElement & { points: readonly (readonly [number, number])[] };
+      const [dx, dy] = a.points.at(-1)!;
+      return { x1: a.x, y1: a.y, x2: a.x + dx, y2: a.y + dy };
+    };
+    const c = ctx();
+    let { els } = run(
+      [
+        { name: "add_shape", input: { id: "a", kind: "rectangle", label: "A" } },
+        { name: "add_shape", input: { id: "b", kind: "rectangle", label: "B" } },
+        { name: "add_arrow", input: { id: "fwd", from: "a", to: "b", label: "request" } },
+        { name: "add_arrow", input: { id: "back", from: "b", to: "a", label: "response" } },
+      ],
+      c,
+    );
+    let fwd = lineOf(els, "fwd");
+    let back = lineOf(els, "back");
+    expect(fwd.y1).toBeCloseTo(fwd.y2); // still straight and horizontal
+    expect(Math.abs(fwd.y1 - back.y1)).toBeCloseTo(36); // LANE apart
+    const centreY = byId(els, "a").y + byId(els, "a").height / 2;
+    expect((fwd.y1 + back.y1) / 2).toBeCloseTo(centreY); // centred on the line between the boxes
+    expect(fwd.x1).toBeLessThan(fwd.x2);
+    expect(back.x1).toBeGreaterThan(back.x2);
+    // Labels follow their own arrow.
+    const labelEl = (arrowId: string) => els.find((e) => e.type === "text" && e.containerId === arrowId)!;
+    expect(Math.abs(labelEl("fwd").y - labelEl("back").y)).toBeCloseTo(36);
+
+    els = applyAction(els, { name: "move_element", input: { target: "b", direction: "down", distance: "far" } }, c).elements;
+    fwd = lineOf(els, "fwd");
+    back = lineOf(els, "back");
+    const gap =
+      Math.abs((fwd.x2 - fwd.x1) * (back.y1 - fwd.y1) - (fwd.y2 - fwd.y1) * (back.x1 - fwd.x1)) /
+      Math.hypot(fwd.x2 - fwd.x1, fwd.y2 - fwd.y1);
+    expect(gap).toBeCloseTo(36); // perpendicular distance between the two parallel lines
+
+    els = applyAction(els, { name: "delete_elements", input: { targets: ["back"] } }, c).elements;
+    fwd = lineOf(els, "fwd");
+    const [a, b] = [byId(els, "a"), byId(els, "b")];
+    const cross =
+      (b.x + b.width / 2 - (a.x + a.width / 2)) * (fwd.y1 - (a.y + a.height / 2)) -
+      (b.y + b.height / 2 - (a.y + a.height / 2)) * (fwd.x1 - (a.x + a.width / 2));
+    expect(cross).toBeCloseTo(0); // back on the centre line
   });
 
   it("draws a labelled vertical dimension line along an element's height", () => {
@@ -248,5 +293,95 @@ describe("applyAction", () => {
     ]);
     expect(s.selectedIds).toEqual(["n"]);
     expect(s.recentIds).toEqual(["t", "n"]);
+  });
+});
+
+describe("generate_diagram", () => {
+  const flow: BoardAction = {
+    name: "generate_diagram",
+    input: {
+      nodes: [
+        { id: "start", label: "Start", kind: "ellipse" },
+        { id: "check", label: "Logged in?", kind: "diamond" },
+        { id: "home", label: "Home" },
+        { id: "login", label: "Login page", color: "blue" },
+      ],
+      edges: [
+        { from: "start", to: "check" },
+        { from: "check", to: "home", label: "yes" },
+        { from: "check", to: "login", label: "no" },
+        { from: "login", to: "check", style: "dashed" },
+      ],
+    },
+  };
+  const centre = (e: ExcalidrawElement) => ({ x: e.x + e.width / 2, y: e.y + e.height / 2 });
+  const overlap = (a: ExcalidrawElement, b: ExcalidrawElement) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  it("lays the nodes out top-down in ranks, without overlaps, as ordinary shapes", () => {
+    const { els } = run([flow]);
+    const [start, check, home, login] = ["start", "check", "home", "login"].map((id) => byId(els, id));
+    expect(check.type).toBe("diamond");
+    expect(check.customData).toEqual({ kind: "diamond" });
+    expect(labelOf(els, login)).toBe("Login page");
+    expect(centre(check).y).toBeGreaterThan(start.y + start.height);
+    expect(home.y).toBeGreaterThan(check.y + check.height);
+    expect(login.y).toBeGreaterThan(check.y + check.height);
+    expect(centre(home).y).toBeCloseTo(centre(login).y); // same rank, side by side
+    const shapes = [start, check, home, login];
+    for (const a of shapes) for (const b of shapes) if (a !== b) expect(overlap(a, b)).toBe(false);
+  });
+
+  it("binds every edge as an arrow, labels included (a cycle is fine)", () => {
+    const { els } = run([flow]);
+    const arrows = live(els).filter((e) => e.type === "arrow");
+    expect(arrows).toHaveLength(4);
+    const ends = arrows.map((a) => a.type === "arrow" && [a.startBinding?.elementId, a.endBinding?.elementId, labelOf(els, a) ?? null]);
+    expect(ends).toEqual([
+      ["start", "check", null],
+      ["check", "home", "yes"],
+      ["check", "login", "no"],
+      ["login", "check", null],
+    ]);
+    expect(arrows[3].strokeStyle).toBe("dashed");
+  });
+
+  it("runs left-to-right with direction 'right'", () => {
+    const { els } = run([{ ...flow, input: { ...flow.input, direction: "right" } } as BoardAction]);
+    expect(byId(els, "check").x).toBeGreaterThan(byId(els, "start").x + byId(els, "start").width);
+  });
+
+  it("places the whole block clear of what is already on the board", () => {
+    const { els } = run([{ name: "add_shape", input: { id: "old", kind: "rectangle", label: "Old", size: "large" } }, flow]);
+    const old = byId(els, "old");
+    for (const id of ["start", "check", "home", "login"]) expect(overlap(byId(els, id), old)).toBe(false);
+  });
+
+  it("connects to existing elements, renames taken ids, and skips edges it can't draw with a warning", () => {
+    const c = ctx();
+    const first = run([{ name: "add_shape", input: { id: "home", kind: "rectangle", label: "Old home" } }], c);
+    const res = applyAction(
+      first.els,
+      {
+        name: "generate_diagram",
+        input: {
+          nodes: [
+            { id: "home", label: "Home" },
+            { id: "cart", label: "Cart" },
+          ],
+          edges: [
+            { from: "home", to: "cart" },
+            { from: "cart", to: "nowhere" },
+          ],
+        },
+      },
+      c,
+    );
+    expect(c.idMap.get("home")).toBe("home-2");
+    expect(labelOf(res.elements, byId(res.elements, "home-2"))).toBe("Home");
+    const arrow = live(res.elements).find((e) => e.type === "arrow")!;
+    expect(arrow.type === "arrow" && arrow.startBinding?.elementId).toBe("home-2");
+    expect(res.warnings).toEqual(['Skipped the arrow cart -> nowhere: Couldn\'t find "nowhere" on the board.']);
+    expect(res.touched).toEqual(["home-2", "cart", arrow.id]);
   });
 });

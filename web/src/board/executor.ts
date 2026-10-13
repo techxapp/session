@@ -1,8 +1,9 @@
+import { Graph, layout } from "@dagrejs/dagre";
 import { convertToExcalidrawElements, newElementWith } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawElement, ExcalidrawLinearElement } from "@excalidraw/excalidraw/element/types";
 import type { BoardAction, Placement, Side } from "@board/shared";
-import { type Box, besides, connector, findFreeSpot, regionPoint } from "./geometry";
+import { type Box, LANE, besides, connector, findFreeSpot, regionPoint } from "./geometry";
 import { OBJECT_SIZES, objectFileId, objectOf } from "./objects";
 import { FONT, NUDGE, PALETTE, ROUGHNESS, SHAPE_SIZES, TEXT_SIZES, fitLabel } from "./style";
 
@@ -24,6 +25,8 @@ export interface ExecResult {
   touched: string[];
   /** Set by animate_element: `elements` is the end state; the runner plays the motion before showing it. */
   animation?: Animation;
+  /** Parts of the action that were skipped (e.g. a diagram edge to an unknown element); shown in the activity log. */
+  warnings?: string[];
 }
 
 export interface Animation {
@@ -62,6 +65,8 @@ export function applyAction(elements: readonly El[], action: BoardAction, ctx: E
       return addText(elements, action.input, ctx);
     case "add_arrow":
       return addArrow(elements, action.input, ctx);
+    case "generate_diagram":
+      return generateDiagram(elements, action.input, ctx);
     case "add_dimension":
       return addDimension(elements, action.input, ctx);
     case "move_element":
@@ -226,6 +231,7 @@ function addArrow(elements: readonly El[], input: Extract<BoardAction, { name: "
   const from = resolve(elements, input.from, ctx);
   const to = resolve(elements, input.to, ctx);
   if (from.id === to.id) throw new ActionError("An arrow needs two different elements.");
+  // Provisional geometry; the reroute below gives it (and any arrow it now runs beside) its lane.
   const geo = connector(boxOf(from), boxOf(to));
   const id = allocateId(elements, input.id, ctx);
   const created = convertToExcalidrawElements(
@@ -258,7 +264,71 @@ function addArrow(elements: readonly El[], input: Extract<BoardAction, { name: "
       : e,
   );
   touch(ctx, id);
-  return { elements: [...next, ...created], touched: [id] };
+  return { elements: rerouteArrows([...next, ...created], new Set([from.id, to.id])), touched: [id] };
+}
+
+const RANKDIR = { down: "TB", right: "LR", up: "BT", left: "RL" } as const;
+/** dagre spacing: between boxes in one rank, between ranks (room for an arrow), between parallel edges. */
+const DIAGRAM_SPACING = { nodesep: 50, ranksep: 80, edgesep: 20 };
+
+/**
+ * A whole diagram in one call. dagre lays the nodes out from the edges between them, the block is placed like
+ * one big shape, then each node and edge is built by addShape / addArrow so it behaves like a hand-made one.
+ * Arrows are straight (connector()), not dagre's routed paths, so they still re-route when a box moves.
+ * Edges may also point at existing elements (not part of the layout); one that can't be drawn is skipped with a warning.
+ */
+function generateDiagram(
+  elements: readonly El[],
+  input: Extract<BoardAction, { name: "generate_diagram" }>["input"],
+  ctx: ExecContext,
+): ExecResult {
+  const size = input.size ?? "small";
+  const local = new Set(input.nodes.map((n) => n.id));
+  const g = new Graph();
+  g.setGraph({ rankdir: RANKDIR[input.direction ?? "down"], ...DIAGRAM_SPACING });
+  g.setDefaultEdgeLabel(() => ({}));
+  for (const n of input.nodes) {
+    const s = fitLabel(SHAPE_SIZES[size], n.label, n.kind ?? "rectangle");
+    g.setNode(n.id, { width: s.w, height: s.h });
+  }
+  for (const e of input.edges ?? []) {
+    if (!local.has(e.from) || !local.has(e.to) || e.from === e.to) continue;
+    // A labelled edge gets label room, so the label doesn't sit on a box.
+    g.setEdge(e.from, e.to, e.label ? { width: e.label.length * 8 + 16, height: 24, labelpos: "c" } : {});
+  }
+  layout(g);
+
+  const boxes = input.nodes.map((n) => {
+    const p = g.node(n.id);
+    return { node: n, x: p.x - p.width / 2, y: p.y - p.height / 2, w: p.width, h: p.height };
+  });
+  const minX = Math.min(...boxes.map((b) => b.x));
+  const minY = Math.min(...boxes.map((b) => b.y));
+  const w = Math.max(...boxes.map((b) => b.x + b.w)) - minX;
+  const h = Math.max(...boxes.map((b) => b.y + b.h)) - minY;
+  const origin = place(elements, input.placement, w, h, ctx);
+
+  let next: El[] = [...elements];
+  const touched: string[] = [];
+  const warnings: string[] = [];
+  for (const b of boxes) {
+    const { kind = "rectangle", ...node } = b.node;
+    const placement = { x: origin.x + b.x - minX, y: origin.y + b.y - minY };
+    const res = addShape(next, { ...node, kind, size, placement }, ctx);
+    next = res.elements;
+    touched.push(...res.touched);
+  }
+  for (const e of input.edges ?? []) {
+    try {
+      const res = addArrow(next, e, ctx);
+      next = res.elements;
+      touched.push(...res.touched);
+    } catch (err) {
+      if (!(err instanceof ActionError)) throw err;
+      warnings.push(`Skipped the arrow ${e.from} -> ${e.to}: ${err.message}`);
+    }
+  }
+  return { elements: next, touched, ...(warnings.length ? { warnings } : {}) };
 }
 
 const DIMENSION_OFFSET = 24;
@@ -349,9 +419,35 @@ function isArrowId(elements: readonly El[], id: string) {
   return elements.some((e) => e.id === id && e.type === "arrow");
 }
 
+/**
+ * Sideways offsets for arrows that share both ends with another arrow, so A -> B and B -> A (or two A -> B)
+ * run side by side instead of on top of each other. Lanes are centred on the line between the shapes, in
+ * scene order; arrows without a shared pair get no entry (offset 0).
+ */
+function arrowLanes(elements: readonly El[]): Map<string, number> {
+  const pairs = new Map<string, ExcalidrawLinearElement[]>();
+  for (const e of elements) {
+    if (e.type !== "arrow" || e.isDeleted || !e.startBinding || !e.endBinding) continue;
+    const [s, t] = [e.startBinding.elementId, e.endBinding.elementId];
+    const key = s < t ? `${s}\n${t}` : `${t}\n${s}`;
+    pairs.set(key, [...(pairs.get(key) ?? []), e]);
+  }
+  const lanes = new Map<string, number>();
+  for (const arrows of pairs.values()) {
+    if (arrows.length < 2) continue;
+    arrows.forEach((a, i) => {
+      const off = (i - (arrows.length - 1) / 2) * LANE;
+      // connector() offsets along the arrow's own normal, which flips for an arrow drawn the other way.
+      lanes.set(a.id, a.startBinding!.elementId < a.endBinding!.elementId ? off : -off);
+    });
+  }
+  return lanes;
+}
+
 /** Recompute geometry for arrows bound to any of `ids` (and move their labels to the new midpoint). */
 export function rerouteArrows(elements: readonly El[], ids: Set<string>): El[] {
   const byId = new Map(elements.map((e) => [e.id, e]));
+  const lanes = arrowLanes(elements);
   const labelShift = new Map<string, { x: number; y: number }>();
   const out = elements.map((e) => {
     if (e.type !== "arrow" || e.isDeleted) return e;
@@ -361,7 +457,7 @@ export function rerouteArrows(elements: readonly El[], ids: Set<string>): El[] {
     const from = byId.get(s);
     const to = byId.get(t);
     if (!from || !to) return e;
-    const geo = connector(boxOf(from), boxOf(to));
+    const geo = connector(boxOf(from), boxOf(to), lanes.get(e.id) ?? 0);
     const oldMid = { x: e.x + (e.points.at(-1)?.[0] ?? 0) / 2, y: e.y + (e.points.at(-1)?.[1] ?? 0) / 2 };
     labelShift.set(e.id, { x: geo.mid.x - oldMid.x, y: geo.mid.y - oldMid.y });
     return newElementWith(e, {
@@ -602,5 +698,11 @@ function deleteElements(elements: readonly El[], ids: string[]): ExecResult {
       return newElementWith(e, { boundElements: e.boundElements.filter((b) => !doomed.has(b.id)) });
     return e;
   });
-  return { elements: next, touched: [] };
+  // An arrow that ran beside a deleted one moves back to the centre line.
+  const ends = new Set<string>();
+  for (const e of elements) {
+    if (e.type !== "arrow" || !doomed.has(e.id)) continue;
+    for (const end of [e.startBinding?.elementId, e.endBinding?.elementId]) if (end && !doomed.has(end)) ends.add(end);
+  }
+  return { elements: ends.size ? rerouteArrows(next, ends) : next, touched: [] };
 }

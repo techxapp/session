@@ -200,5 +200,22 @@ class Scroll(unittest.TestCase):
                 self.assertFalse(got and got[1] and got[1][0]["name"] == "scroll_view")
 
 
+class Diagram(unittest.TestCase):
+    def test_needs_llm(self):
+        for text in [
+            "draw a flowchart for user login",
+            "um, sketch the architecture of a web app",
+            "make an org chart for a small startup",
+            "draw a mind map about holidays",
+            "show the ci pipeline",
+        ]:
+            with self.subTest(text):
+                self.assertEqual(rule_command(text, SCENE)[:2], ("llm", None))
+
+    def test_templates_still_win(self):
+        got = rule_command("add a box labelled architecture", SCENE)
+        self.assertEqual(got and got[0], "fast")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -111,6 +111,36 @@ export const AddArrow = z.object({
   bidirectional: z.boolean().optional(),
 });
 
+const DiagramNode = z.object({
+  id: NewId,
+  label: z.string().min(1).max(200),
+  kind: z
+    .enum(["rectangle", "ellipse", "diamond", "sticky"])
+    .optional()
+    .describe("Default 'rectangle'. 'diamond' for a decision, 'ellipse' for start/end."),
+  color: Color.optional(),
+});
+
+const DiagramEdge = z.object({
+  from: ElementId.describe("A node id of this diagram, or an existing element."),
+  to: ElementId,
+  label: z.string().max(100).optional().describe("e.g. 'yes' / 'no' out of a decision."),
+  style: z.enum(["solid", "dashed", "dotted"]).optional(),
+});
+
+export const GenerateDiagram = z
+  .object({
+    nodes: z.array(DiagramNode).min(2).max(30),
+    edges: z.array(DiagramEdge).max(60).optional().describe("Arrows, in any order. The layout is computed from them."),
+    direction: z
+      .enum(["down", "right", "up", "left"])
+      .optional()
+      .describe("Which way the flow runs. Default 'down'; 'right' for pipelines and timelines."),
+    size: z.enum(["small", "medium", "large"]).optional().describe("Box size. Default 'small'."),
+    placement: Placement.optional().describe("Where to put the whole diagram."),
+  })
+  .refine((v) => new Set(v.nodes.map((n) => n.id)).size === v.nodes.length, { message: "Node ids must be unique." });
+
 export const AddDimension = z
   .object({
     id: NewId.optional(),
@@ -182,6 +212,7 @@ export const ACTION_SCHEMAS = {
   add_object: AddObjectAny,
   add_text: AddText,
   add_arrow: AddArrow,
+  generate_diagram: GenerateDiagram,
   add_dimension: AddDimension,
   move_element: MoveElement,
   animate_element: AnimateElement,
@@ -201,6 +232,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
     "Draw a picture of a real-world thing: a person, animal, plant, weather, food, building, vehicle or everyday object. Not for diagram boxes.",
   add_text: "Write free-standing text on the board (titles, notes, bullet lists).",
   add_arrow: "Connect two elements with an arrow, optionally labelled.",
+  generate_diagram:
+    "Draw a whole diagram at once (flowchart, architecture, pipeline, org chart, mind map, process steps): boxes plus the arrows between them, laid out automatically.",
   add_dimension:
     "Draw a measurement line with a label like '10 ft': along one element's height/width (target), or across the gap between two elements (from + to).",
   move_element: "Move an existing element: nudge it in a direction or place it next to something / in a region.",

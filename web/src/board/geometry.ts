@@ -67,22 +67,40 @@ export function findFreeSpot(box: Box, obstacles: Box[], side: Side = "below"): 
   return { x, y };
 }
 
-/** Point on the border of `box` along the line from its centre toward `toward`, pushed out by `gap`. */
-export function edgePoint(box: Box, toward: Point, gap = 8): Point {
-  const c = center(box);
-  const dx = toward.x - c.x;
-  const dy = toward.y - c.y;
-  if (dx === 0 && dy === 0) return c;
-  const sx = dx === 0 ? Infinity : (box.w / 2 + gap) / Math.abs(dx);
-  const sy = dy === 0 ? Infinity : (box.h / 2 + gap) / Math.abs(dy);
-  const s = Math.min(sx, sy);
-  return { x: c.x + dx * s, y: c.y + dy * s };
+/** Where a ray from `p` (inside `box`) in direction `d` leaves the box, pushed out by `gap`. */
+export function edgePoint(box: Box, p: Point, d: Point, gap = 8): Point {
+  if (d.x === 0 && d.y === 0) return p;
+  const tx = d.x > 0 ? (box.x + box.w + gap - p.x) / d.x : d.x < 0 ? (box.x - gap - p.x) / d.x : Infinity;
+  const ty = d.y > 0 ? (box.y + box.h + gap - p.y) / d.y : d.y < 0 ? (box.y - gap - p.y) / d.y : Infinity;
+  const t = Math.min(tx, ty);
+  return { x: p.x + d.x * t, y: p.y + d.y * t };
 }
 
-/** Straight connector between two boxes, as Excalidraw linear-element geometry. */
-export function connector(from: Box, to: Box) {
-  const start = edgePoint(from, center(to));
-  const end = edgePoint(to, center(from));
+/** Space between parallel arrows joining the same two shapes (A -> B and B -> A). */
+export const LANE = 36;
+
+/** How far a line through `box`'s centre can shift along unit normal `n` and still start inside the box (with room to spare). */
+const reach = (box: Box, n: Point) =>
+  0.7 * Math.min(n.x ? box.w / 2 / Math.abs(n.x) : Infinity, n.y ? box.h / 2 / Math.abs(n.y) : Infinity);
+
+/**
+ * Straight connector between two boxes, as Excalidraw linear-element geometry. `offset` shifts the line sideways
+ * (along the start->end left normal) so several arrows between the same pair run side by side; it is capped so
+ * the line still leaves from inside both boxes.
+ */
+export function connector(from: Box, to: Box, offset = 0) {
+  const a = center(from);
+  const b = center(to);
+  const d = { x: b.x - a.x, y: b.y - a.y };
+  const len = Math.hypot(d.x, d.y);
+  let shift = { x: 0, y: 0 };
+  if (offset && len) {
+    const n = { x: d.y / len, y: -d.x / len };
+    const off = Math.sign(offset) * Math.min(Math.abs(offset), reach(from, n), reach(to, n));
+    shift = { x: n.x * off, y: n.y * off };
+  }
+  const start = edgePoint(from, { x: a.x + shift.x, y: a.y + shift.y }, d);
+  const end = edgePoint(to, { x: b.x + shift.x, y: b.y + shift.y }, { x: -d.x, y: -d.y });
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   return {

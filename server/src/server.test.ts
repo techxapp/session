@@ -66,6 +66,7 @@ describe("tool definitions", () => {
       "add_object",
       "add_text",
       "add_arrow",
+      "generate_diagram",
       "add_dimension",
       "move_element",
       "animate_element",
@@ -112,6 +113,16 @@ describe("blockToEvents", () => {
     expect(blockToEvents(toolUse("scroll_view", { fit: "all" }), 0)[0].type).toBe("action");
     expect(blockToEvents(toolUse("scroll_view", { direction: "down", edge: "top" }), 0)[0].type).toBe("invalid");
     expect(blockToEvents(toolUse("scroll_view", {}), 0)[0].type).toBe("invalid");
+  });
+  it("accepts generate_diagram with unique node ids only", () => {
+    const nodes = [
+      { id: "start", label: "Start", kind: "ellipse" },
+      { id: "check", label: "Logged in?", kind: "diamond" },
+    ];
+    const edges = [{ from: "start", to: "check" }];
+    expect(blockToEvents(toolUse("generate_diagram", { nodes, edges, direction: "right" }), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("generate_diagram", { nodes: [nodes[0], nodes[0]] }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("generate_diagram", { nodes: [nodes[0]] }), 0)[0].type).toBe("invalid");
   });
   it("rejects malformed or unknown calls instead of forwarding them", () => {
     expect(blockToEvents(toolUse("add_shape", { kind: "hexagon" }), 0)[0].type).toBe("invalid");

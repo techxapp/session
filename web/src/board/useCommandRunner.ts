@@ -111,7 +111,8 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
               touched.push(...res.touched);
               applied++;
               changed++;
-              update(id, (e) => ({ ...e, actions: applied, firstMs: e.firstMs ?? ev.ms }));
+              const warns = (res.warnings ?? []).map((text) => ({ kind: "warn" as const, text }));
+              update(id, (e) => ({ ...e, actions: applied, firstMs: e.firstMs ?? ev.ms, notes: [...e.notes, ...warns] }));
             } catch (err) {
               const msg = err instanceof ActionError ? err.message : `Couldn't apply ${ev.action.name}.`;
               if (!(err instanceof ActionError)) console.error(err);
