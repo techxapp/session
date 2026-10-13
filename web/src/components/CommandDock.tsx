@@ -38,14 +38,18 @@ export function CommandDock({ showSuggestions, running, disabled, onSubmit, onCa
   }, []);
 
   const listening = voice.state === "listening";
+  const dozing = voice.state === "dozing";
+  const micOn = listening || dozing;
   const busyMic = voice.state === "starting" || voice.state === "stopping";
   const placeholder = disabled
     ? "Connect the server to start drawing…"
     : voice.state === "off" && voice.error
       ? voice.error
-      : listening || busyMic
-        ? voice.interim || (listening ? "Listening… say a command" : "Starting the mic…")
-        : "Tell the board what to draw…";
+      : dozing
+        ? "Mic paused after a quiet spell. Start speaking to resume it"
+        : listening || busyMic
+          ? voice.interim || (listening ? "Listening… say a command" : "Starting the mic…")
+          : "Tell the board what to draw…";
 
   const submit = (value = text) => {
     const v = value.trim();
@@ -93,12 +97,12 @@ export function CommandDock({ showSuggestions, running, disabled, onSubmit, onCa
         {!text && !running && voice.state === "off" && <kbd className="hint">/</kbd>}
         <button
           type="button"
-          className={`mic${listening ? " is-on" : ""}`}
+          className={`mic${listening ? " is-on" : ""}${dozing ? " is-dozing" : ""}`}
           onClick={voice.toggle}
           disabled={disabled || voice.state === "stopping"}
-          aria-pressed={listening}
-          aria-label={listening ? "Stop listening" : "Speak commands"}
-          title={listening ? "Stop listening" : "Speak commands (local speech recognition)"}
+          aria-pressed={micOn}
+          aria-label={micOn ? "Stop listening" : "Speak commands"}
+          title={dozing ? "Stop listening (paused until you speak)" : listening ? "Stop listening" : "Speak commands"}
         >
           {busyMic ? <Loader2 className="spin" size={18} /> : <Mic size={18} />}
         </button>

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BoardAction } from "@board/shared";
 import { applyAction, type ExecContext } from "../board/executor";
-import { boardKeyterms, isCommand } from "./useVoice";
+import { PREROLL_FRAMES, WakeDetector, boardKeyterms, isCommand, rms } from "./useVoice";
 
 beforeAll(async () => {
   const { setCustomTextMetricsProvider } = await import("@excalidraw/excalidraw");
@@ -46,5 +46,26 @@ describe("isCommand", () => {
     expect(isCommand("Undo that.")).toBe(true);
     expect(isCommand("...")).toBe(false);
     expect(isCommand(" ")).toBe(false);
+  });
+});
+
+describe("WakeDetector", () => {
+  const frame = (level: number) => new Float32Array(1600).fill(level); // rms = |level|
+
+  it("wakes on two loud frames in a row, not on one click", () => {
+    expect(rms(frame(-0.1))).toBeCloseTo(0.1);
+    const wake = new WakeDetector(0.01);
+    expect(wake.push(frame(0.001))).toBe(false);
+    expect(wake.push(frame(0.05))).toBe(false);
+    expect(wake.push(frame(0.001))).toBe(false);
+    expect(wake.push(frame(0.05))).toBe(false);
+    expect(wake.push(frame(0.02))).toBe(true);
+  });
+
+  it("keeps only the last 2 s as pre-roll", () => {
+    const wake = new WakeDetector(1);
+    for (let i = 0; i < PREROLL_FRAMES + 5; i++) wake.push(frame(i / 1000));
+    expect(wake.frames).toHaveLength(PREROLL_FRAMES);
+    expect(wake.frames[0][0]).toBeCloseTo(5 / 1000);
   });
 });

@@ -73,12 +73,25 @@ export interface Settings {
 export interface SpeechSettings {
   provider?: SttProvider;
   keys: Partial<Record<SttProvider, string>>;
+  /** Pause recognition after this long with nothing heard (0 = never); default IDLE_SECONDS. */
+  idleSeconds?: number;
+  /** How loud the mic must get to resume a paused session; default "normal". */
+  wake?: WakeSensitivity;
 }
+
+export type WakeSensitivity = "high" | "normal" | "low";
+export const IDLE_SECONDS = 30;
+/** RMS level (dBFS) of a ~100 ms mic frame that counts as someone speaking, after the browser's noise suppression. */
+export const WAKE_DBFS: Record<WakeSensitivity, number> = { high: -50, normal: -42, low: -34 };
 
 /** What the voice hook needs to start listening. */
 export interface SpeechConfig {
   provider: SttProvider;
   apiKey?: string;
+  /** 0 = never pause. */
+  idleMs: number;
+  /** Linear RMS threshold that resumes a paused session. */
+  wakeRms: number;
 }
 
 const STORAGE_KEY = "voice-board:settings:v1";
@@ -137,10 +150,15 @@ export function effectiveModel(s: Settings, health: HealthInfo | null): string |
   return onEnvEndpoint ? health.model : c.models[0];
 }
 
-/** The speech provider the mic will use, and the browser's key for it (else the server's .env key). */
+/** The speech provider the mic will use, the browser's key for it (else the server's .env key) and the idle pause. */
 export function speechConfig(s: Settings, health: HealthInfo | null): SpeechConfig {
   const provider = s.speech.provider ?? health?.stt.provider ?? "moonshine";
-  return { provider, apiKey: CLOUD_STT.includes(provider) ? s.speech.keys[provider] || undefined : undefined };
+  return {
+    provider,
+    apiKey: CLOUD_STT.includes(provider) ? s.speech.keys[provider] || undefined : undefined,
+    idleMs: Math.max(0, s.speech.idleSeconds ?? IDLE_SECONDS) * 1000,
+    wakeRms: 10 ** (WAKE_DBFS[s.speech.wake ?? "normal"] / 20),
+  };
 }
 
 /** What to send with each command, or undefined to use .env as is. */

@@ -14,6 +14,8 @@ import {
   type Profile,
   type Settings,
   type SpeechSettings,
+  type WakeSensitivity,
+  IDLE_SECONDS,
 } from "../settings";
 import { modelName } from "./StatusPill";
 
@@ -39,6 +41,16 @@ const SPEECH: { value: SttProvider; label: string; title: string }[] = [
     title:
       "The browser's built-in Web Speech API: no key or server; Chrome sends audio to Google, Edge to Microsoft; no board key terms; not in Firefox",
   },
+];
+const IDLE: { value: string; label: string }[] = [
+  { value: "15", label: "15 s" },
+  { value: "60", label: "1 min" },
+  { value: "120", label: "2 min" },
+  { value: "0", label: "Never" },
+];
+const WAKE: { value: WakeSensitivity; label: string; title: string }[] = [
+  { value: "high", label: "High", title: "Wakes on quieter speech (and more often on background noise)" },
+  { value: "low", label: "Low", title: "Needs clearer, louder speech to wake" },
 ];
 const speechName = (p: SttProvider) => SPEECH.find((o) => o.value === p)!.label;
 const OTHER = "\u0000other";
@@ -259,6 +271,30 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
           />
         </div>
 
+        <div className="field">
+          <span className="field-label">Pause listening after silence</span>
+          <Segmented
+            value={settings.speech.idleSeconds?.toString()}
+            onChange={(v) => setSpeech({ idleSeconds: v === undefined ? undefined : Number(v) })}
+            options={IDLE}
+            defaultLabel={`Default (${IDLE_SECONDS} s)`}
+            defaultTitle="The mic stays open; speaking resumes recognition"
+          />
+        </div>
+
+        {speech.idleMs > 0 && (
+          <div className="field">
+            <span className="field-label">Wake sensitivity</span>
+            <Segmented
+              value={settings.speech.wake}
+              onChange={(wake) => setSpeech({ wake })}
+              options={WAKE}
+              defaultLabel="Default (normal)"
+              defaultTitle="How loud the mic must get to resume a paused session"
+            />
+          </div>
+        )}
+
         {CLOUD_STT.includes(speech.provider) && (
           <label className="field">
             <span className="field-label">{speechName(speech.provider)} API key</span>
@@ -323,15 +359,17 @@ function Segmented<T extends string>({
   onChange,
   options,
   defaultLabel,
+  defaultTitle = "Use the server's .env setting",
 }: {
   value: T | undefined;
   onChange: (v: T | undefined) => void;
   options: { value: T; label: string; title?: string }[];
   defaultLabel: string;
+  defaultTitle?: string;
 }) {
   return (
     <div className="segmented" role="radiogroup">
-      {[{ value: undefined, label: defaultLabel, title: "Use the server's .env setting" }, ...options].map((o) => (
+      {[{ value: undefined, label: defaultLabel, title: defaultTitle }, ...options].map((o) => (
         <button
           key={o.label}
           type="button"

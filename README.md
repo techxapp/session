@@ -87,7 +87,7 @@ uv pip install --python .venv-stt -r stt/requirements.txt
 .venv-stt/Scripts/python stt/server.py    # listens on 127.0.0.1:8789; downloads the model (~140 MB) on first start
 ```
 
-Then run `npm run dev` as usual. Vite forwards `/stt` to port 8789. Click the mic, allow microphone access and say a command. Click the mic again to stop; whatever you were saying still finishes and runs.
+Then run `npm run dev` as usual. Vite forwards `/stt` to port 8789. Click the mic, allow microphone access and say a command. Click the mic again to stop; whatever you were saying still finishes and runs. After 30 seconds with nothing recognised, listening pauses: the mic button dims and the speech service is disconnected, but the browser keeps the mic open and checks how loud it is. As soon as you start speaking it reconnects and sends the last 2 seconds of audio first, so the words that woke it still count. Set the delay (15 s to 2 min, or Never) and how loud speech must be to wake it under *Pause listening after silence* and *Wake sensitivity* in Settings. With the *Browser* provider the first word after a pause can be lost, because its recognition can't be given the earlier audio.
 
 - `STT_MODEL=small` (default): text arrives about 0.5–0.8 s after you stop talking. It uses about half a CPU core and 310 MB of RAM (Ryzen 7 4800H). `medium` is a little more accurate but slower: 0.8–1.2 s, about 0.8 core and 500 MB.
 - Other variables: `STT_PORT` (8789; Vite's proxy expects 8789), `STT_HOST` (127.0.0.1), `MOONSHINE_VOICE_CACHE` (where models are kept).
@@ -102,7 +102,7 @@ DEEPGRAM_API_KEY=...             # or ASSEMBLYAI_API_KEY=...
 # DEEPGRAM_MODEL=nova-3   ASSEMBLYAI_MODEL=universal-streaming-english
 ```
 
-The Settings choice overrides `STT_PROVIDER` for that browser and applies the next time the mic starts. A `.env` key is only sent to its own service. Board labels are passed as key terms to both services. Deepgram takes them only when the mic starts; AssemblyAI is updated as the board changes. Audio goes to the service you pick, and it is billed by the minute while the mic is on.
+The Settings choice overrides `STT_PROVIDER` for that browser and applies the next time the mic starts. A `.env` key is only sent to its own service. Board labels are passed as key terms to both services. Deepgram takes them only when the mic starts; AssemblyAI is updated as the board changes. Audio goes to the service you pick, and it is billed by the minute while it is connected, which stops when listening pauses.
 
 **Browser.** The *Browser* choice uses the browser's own speech recognition (the Web Speech API). It needs no key, no sidecar and no server. It works in Chrome, Edge and Safari, but not Firefox, and Brave has no speech service. Chrome sends the audio to Google and Edge to Microsoft. It ignores board key terms. Browsers end recognition after a pause, so it restarts on its own, and a word spoken right at a restart can be lost.
 

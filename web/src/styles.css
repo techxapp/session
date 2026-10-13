@@ -492,6 +492,10 @@ kbd {
 .mic.is-on svg {
   animation: pulse 1.6s ease-in-out infinite;
 }
+.mic.is-dozing {
+  background: color-mix(in srgb, var(--bad) 7%, transparent);
+  color: color-mix(in srgb, var(--bad) 60%, var(--text-muted));
+}
 .bar.is-listening {
   border-color: color-mix(in srgb, var(--bad) 45%, transparent);
 }

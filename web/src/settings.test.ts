@@ -47,14 +47,25 @@ describe("settings -> request config", () => {
 
 describe("settings -> speech config", () => {
   it("follows the server's STT_PROVIDER until one is picked, with the browser's key for cloud providers", () => {
-    expect(speechConfig(DEFAULT_SETTINGS, health)).toEqual({ provider: "deepgram", apiKey: undefined });
-    expect(speechConfig(DEFAULT_SETTINGS, null)).toEqual({ provider: "moonshine", apiKey: undefined });
+    expect(speechConfig(DEFAULT_SETTINGS, health)).toMatchObject({ provider: "deepgram", apiKey: undefined });
+    expect(speechConfig(DEFAULT_SETTINGS, null)).toMatchObject({ provider: "moonshine", apiKey: undefined });
     const speech = { provider: "assemblyai" as const, keys: { assemblyai: "aai", moonshine: "ignored" } };
-    expect(speechConfig(with_({ speech }), health)).toEqual({ provider: "assemblyai", apiKey: "aai" });
-    expect(speechConfig(with_({ speech: { ...speech, provider: "moonshine" } }), health)).toEqual({
+    expect(speechConfig(with_({ speech }), health)).toMatchObject({ provider: "assemblyai", apiKey: "aai" });
+    expect(speechConfig(with_({ speech: { ...speech, provider: "moonshine" } }), health)).toMatchObject({
       provider: "moonshine",
       apiKey: undefined,
     });
-    expect(speechConfig(with_({ speech: { ...speech, provider: "browser" } }), health)).toEqual({ provider: "browser", apiKey: undefined });
+    expect(speechConfig(with_({ speech: { ...speech, provider: "browser" } }), health)).toMatchObject({
+      provider: "browser",
+      apiKey: undefined,
+    });
+  });
+
+  it("pauses after 30 s of silence unless set otherwise, and wakes at the chosen level", () => {
+    expect(speechConfig(DEFAULT_SETTINGS, health)).toMatchObject({ idleMs: 30_000 });
+    expect(speechConfig(DEFAULT_SETTINGS, health).wakeRms).toBeCloseTo(10 ** (-42 / 20));
+    const s = with_({ speech: { keys: {}, idleSeconds: 0, wake: "high" } });
+    expect(speechConfig(s, health)).toMatchObject({ idleMs: 0, wakeRms: 10 ** (-50 / 20) });
+    expect(speechConfig(with_({ speech: { keys: {}, idleSeconds: 90 } }), health).idleMs).toBe(90_000);
   });
 });
