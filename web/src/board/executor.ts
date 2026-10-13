@@ -82,6 +82,8 @@ export function applyAction(elements: readonly El[], action: BoardAction, ctx: E
       );
     case "undo_last_command":
       throw new ActionError("undo is handled by the command runner");
+    case "scroll_view":
+      throw new ActionError("scrolling is handled by the command runner");
   }
 }
 

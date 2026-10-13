@@ -71,6 +71,7 @@ describe("tool definitions", () => {
       "animate_element",
       "update_element",
       "delete_elements",
+      "scroll_view",
       "undo_last_command",
       "clear_board",
     ]);
@@ -104,6 +105,13 @@ describe("blockToEvents", () => {
   it("accepts catalog objects and rejects ones not in it", () => {
     expect(blockToEvents(toolUse("add_object", { id: "tree", object: "tree", size: "large" }), 0)[0].type).toBe("action");
     expect(blockToEvents(toolUse("add_object", { object: "spaceship-shaped-cake" }), 0)[0].type).toBe("invalid");
+  });
+  it("accepts scroll_view with exactly one of direction / to / edge / fit", () => {
+    expect(blockToEvents(toolUse("scroll_view", { direction: "down", distance: "little" }), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("scroll_view", { to: "db" }), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("scroll_view", { fit: "all" }), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("scroll_view", { direction: "down", edge: "top" }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("scroll_view", {}), 0)[0].type).toBe("invalid");
   });
   it("rejects malformed or unknown calls instead of forwarding them", () => {
     expect(blockToEvents(toolUse("add_shape", { kind: "hexagon" }), 0)[0].type).toBe("invalid");
@@ -531,6 +539,20 @@ describe("fast path", () => {
     const events = await command(withFastPath(anthropicProvider(client), fast));
     expect(events.map((e) => e.type)).toEqual(["route", "action", "done"]);
     expect(events[1]).toMatchObject({ action: { name: "add_object", input: { object: "tree", size: "large" } } });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("streams a rule-built scroll_view", async () => {
+    const { client, calls } = fakeClient([]);
+    const fast = decide({
+      route: "fast",
+      actions: [{ name: "scroll_view", input: { direction: "down" } }],
+      reason: "rule: scroll",
+      model: "rules",
+    });
+    const events = await command(withFastPath(anthropicProvider(client), fast));
+    expect(events.map((e) => e.type)).toEqual(["route", "action", "done"]);
+    expect(events[1]).toMatchObject({ action: { name: "scroll_view", input: { direction: "down" } } });
     expect(calls).toHaveLength(0);
   });
 

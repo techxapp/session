@@ -5,9 +5,10 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { CommandEvent, CommandSource, ModelConfig, ObjectMode } from "@board/shared";
 import { streamCommand } from "../api";
 import { playAnimation } from "./animate";
-import { ActionError, applyAction, isTopLevel } from "./executor";
+import { ActionError, applyAction } from "./executor";
 import { loadObjectFiles } from "./objects";
 import { summarize, visibleArea } from "./summary";
+import { boundsOf, frame, isInSafeArea, planScroll, playScroll } from "./view";
 
 export type EntryStatus = "running" | "done" | "error" | "ignored" | "cancelled";
 
@@ -75,6 +76,8 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
       const ctx = { viewport: visibleArea(api.getAppState()), recentIds: recentIds.current, idMap: new Map<string, string>() };
       const touched: string[] = [];
       let applied = 0;
+      let changed = 0; // applied actions that changed the board (scrolling doesn't)
+      let scrolled = false;
       let undid = false;
       let failed = false;
 
@@ -90,6 +93,15 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
               continue;
             }
             try {
+              if (ev.action.name === "scroll_view") {
+                const target = planScroll(api.getSceneElements(), api.getAppState(), ev.action.input, ctx);
+                await playScroll(api, target, controller.signal);
+                ctx.viewport = visibleArea(api.getAppState()); // later actions place into the new view
+                scrolled = true;
+                applied++;
+                update(id, (e) => ({ ...e, actions: applied, firstMs: e.firstMs ?? ev.ms }));
+                continue;
+              }
               const before = api.getSceneElementsIncludingDeleted();
               const res = applyAction(before, ev.action, ctx);
               // Play motion before the next action, so "walk to X, then to Y" runs in order.
@@ -98,6 +110,7 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
               if (ev.action.name === "add_object") void loadObjectFiles(api);
               touched.push(...res.touched);
               applied++;
+              changed++;
               update(id, (e) => ({ ...e, actions: applied, firstMs: e.firstMs ?? ev.ms }));
             } catch (err) {
               const msg = err instanceof ActionError ? err.message : `Couldn't apply ${ev.action.name}.`;
@@ -128,7 +141,8 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
         }
       }
 
-      const changedBoard = applied > 0 && !undid;
+      // A view-only command (scrolling) leaves no undo step: "undo" then undoes the last board change.
+      const changedBoard = changed > 0 && !undid;
       if (changedBoard) history.current = [...history.current.slice(-49), snapshot];
       const status: EntryStatus = controller.signal.aborted
         ? "cancelled"
@@ -140,7 +154,7 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
       update(id, (e) => ({ ...e, status }));
       if (inflight.current === controller) inflight.current = null;
       if (!inflight.current) setRunning(false);
-      if (touched.length) revealIfHidden(api, touched);
+      if (touched.length && !scrolled) revealIfHidden(api, touched); // after a scroll, the user chose the view
     },
     [api, undo],
   );
@@ -176,33 +190,9 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
  * Keeps the current zoom unless the content can't fit, then zooms out just enough.
  */
 function revealIfHidden(api: ExcalidrawImperativeAPI, ids: string[]) {
-  const els = api.getSceneElements().filter((e) => ids.includes(e.id) && isTopLevel(e));
-  if (!els.length) return;
+  const box = boundsOf(api.getSceneElements().filter((e) => ids.includes(e.id)));
   const st = api.getAppState();
-  const zoom = st.zoom.value;
-  // Unobstructed screen area: below the toolbar, above the dock + activity feed.
-  const safe = { left: 24, top: 96, right: st.width - 24, bottom: st.height - 300 };
-  const box = {
-    x1: Math.min(...els.map((e) => e.x)),
-    y1: Math.min(...els.map((e) => e.y)),
-    x2: Math.max(...els.map((e) => e.x + e.width)),
-    y2: Math.max(...els.map((e) => e.y + e.height)),
-  };
-  const toScreen = (x: number, y: number) => ({ x: (x + st.scrollX) * zoom, y: (y + st.scrollY) * zoom });
-  const a = toScreen(box.x1, box.y1);
-  const b = toScreen(box.x2, box.y2);
-  if (a.x >= safe.left && a.y >= safe.top && b.x <= safe.right && b.y <= safe.bottom) return;
-
-  const safeW = Math.max(200, safe.right - safe.left);
-  const safeH = Math.max(160, safe.bottom - safe.top);
-  const nextZoom = Math.min(zoom, (safeW / (box.x2 - box.x1)) * 0.9, (safeH / (box.y2 - box.y1)) * 0.9);
-  const cx = (box.x1 + box.x2) / 2;
-  const cy = (box.y1 + box.y2) / 2;
-  api.updateScene({
-    appState: {
-      zoom: { value: Math.max(0.1, nextZoom) as typeof st.zoom.value },
-      scrollX: (safe.left + safeW / 2) / nextZoom - cx,
-      scrollY: (safe.top + safeH / 2) / nextZoom - cy,
-    },
-  });
+  if (!box || isInSafeArea(st, box)) return;
+  const next = frame(st, box);
+  api.updateScene({ appState: { scrollX: next.scrollX, scrollY: next.scrollY, zoom: { value: next.zoom as typeof st.zoom.value } } });
 }

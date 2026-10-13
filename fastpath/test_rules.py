@@ -149,5 +149,56 @@ class Motion(unittest.TestCase):
                 self.assertIsNone(rule_command(text, KIDS))
 
 
+class Scroll(unittest.TestCase):
+    def test_answers(self):
+        S = lambda **k: [{"name": "scroll_view", "input": k}]  # noqa: E731
+        cases = {
+            "scroll down": S(direction="down"),
+            "pan left a bit": S(direction="left", distance="little"),
+            "scroll the page up a lot": S(direction="up", distance="far"),
+            "scroll down a page": S(direction="down", distance="far"),
+            "move the view right": S(direction="right"),
+            "um, scroll left, no wait, right": S(direction="right"),
+            "can you scroll a little further down please": S(direction="down", distance="little"),
+            "go to the left": S(direction="left"),
+            "scroll all the way up": S(edge="top"),
+            "scroll all the way to the left": S(edge="left"),
+            "back to the top": S(edge="top"),
+            "go to the bottom of the board": S(edge="bottom"),
+            "jump to the start": S(edge="top"),
+            "go to postgres": S(to="db"),
+            "take me to the cache": S(to="cache"),
+            "scroll down to the api gateway": S(to="api"),
+            "show me the sprint board": S(to="title"),
+            "focus on it": S(to="cache"),
+            "show everything": S(fit="all"),
+            "show me the whole board": S(fit="all"),
+            "zoom to fit": S(fit="all"),
+        }
+        for text, want in cases.items():
+            with self.subTest(text):
+                got = rule_command(text, SCENE)
+                self.assertEqual(got and got[:2], ("fast", want))
+
+    def test_needs_llm(self):
+        for text in [
+            "scroll down and add a box",
+            "scroll the api down",
+            "scroll a bit",
+            "pan up and to the left",
+            "scroll to the database",  # a synonym
+            "move the camera somewhere else",
+        ]:
+            with self.subTest(text):
+                self.assertEqual(rule_command(text, SCENE)[:2], ("llm", None))
+
+    def test_not_scroll(self):
+        self.assertEqual(actions("move the cache down"), [{"name": "move_element", "input": {"target": "cache", "direction": "down"}}])
+        for text in ["show me a tree", "move the canvas down", "zoom in"]:
+            with self.subTest(text):
+                got = rule_command(text, SCENE)
+                self.assertFalse(got and got[1] and got[1][0]["name"] == "scroll_view")
+
+
 if __name__ == "__main__":
     unittest.main()

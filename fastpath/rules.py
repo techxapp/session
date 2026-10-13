@@ -428,7 +428,81 @@ def has_motion(cmd: Command) -> bool:
     return any(x in MOTION_SPEED for x in cmd.w) or cmd.w[0] in ("move", "bring") and {"towards", "toward"} & set(cmd.w)
 
 
-TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, move, animate]
+SCROLL_VERBS = {"scroll", "pan"}
+SCROLL_WORDS = verb_forms("scroll", "pan") | {"scrolled", "panned", "panning", "camera", "viewport", "canvas"}
+# Nouns for the view itself: "scroll the page down". Move verbs only take the camera-like ones ("move the view
+# left"); "move the canvas down" could mean dragging it the other way, so it goes to the LLM.
+VIEW_NOUNS = {"view", "screen", "page", "canvas", "board", "camera"}
+MOVABLE_VIEW_NOUNS = {"view", "screen", "camera"}
+SCROLL_TAIL = {"to", "the", "over", "a", "little", "bit", "slightly", "tad", "touch", "lot", "far", "further", "more", "way", "side"}
+SCREENFUL = {"page", "screen", "screenful"}  # "scroll down a page" = a whole screen
+EDGES = {"top": "top", "bottom": "bottom", "left": "left", "right": "right", "start": "top", "beginning": "top", "end": "bottom"}
+EDGE_TAILS = {"", "of the board", "of the page", "of the canvas", "of it", "of everything"}
+GOTO_PHRASES = sorted(
+    [f"{v}{back}{over} to" for v in ("scroll", "pan", "go", "jump", "head", "navigate", "take me", "bring me")
+     for back in ("", " back") for over in ("", " over", " all the way", " up", " down")]
+    + ["back to", "show me", "focus on", "center on", "centre on"],
+    key=lambda p: -len(p),
+)  # fmt: skip
+FIT_PHRASES = {
+    f"{v} {what}{tail}".strip()
+    for v in ("show", "show me", "fit", "see", "let me see", "zoom out to show", "zoom out to see")
+    for what in ("everything", "it all", "all of it", "the whole board", "the entire board", "the whole canvas",
+                 "the whole page", "the whole thing", "everything on the board")
+    for tail in ("", " on screen", " on the screen", " at once", " on one screen")
+} | {"zoom to fit", "zoom out to fit", "fit to screen", "fit to the screen", "fit the board on screen", "fit all"}  # fmt: skip
+
+
+def view_noun(w: list[str], i: int, nouns: set[str]) -> int:
+    """Length of "the page" / "page" at w[i], else 0."""
+    j = i + 1 if w[i : i + 1] == ["the"] else i
+    return j + 1 - i if j < len(w) and w[j] in nouns else 0
+
+
+def scroll(cmd: Command, scene: dict):
+    """'scroll down a bit', 'pan the view left', 'go to postgres', 'back to the top', 'show everything'."""
+    w = cmd.w
+    if cmd.phrase(0) in FIT_PHRASES:
+        return [{"name": "scroll_view", "input": {"fit": "all"}}], "scroll"
+    n = starts(w, GOTO_PHRASES)
+    if n:
+        rest = w[n:]
+        if rest[:1] == ["the"]:
+            rest = rest[1:]
+        if rest and rest[0] in EDGES and " ".join(rest[1:]) in EDGE_TAILS and not {"show", "focus", "center", "centre"} & set(w[:n]):
+            if rest[0] in ("left", "right") and "way" not in w[:n]:  # "go to the left" scrolls left; "all the way to the left" is the edge
+                return [{"name": "scroll_view", "input": {"direction": rest[0]}}], "scroll"
+            return [{"name": "scroll_view", "input": {"edge": EDGES[rest[0]]}}], "scroll"
+        target = ref(w[n:], scene)
+        return ([{"name": "scroll_view", "input": {"to": target}}], "scroll") if target else None
+    if w[0] in SCROLL_VERBS:
+        i = 1 + (view_noun(w, 1, VIEW_NOUNS) if len(w) > 1 else 0)
+    elif w[0] in MOVE_VERBS and len(w) > 1 and view_noun(w, 1, MOVABLE_VIEW_NOUNS) and not ref(w[1:3], scene):
+        i = 1 + view_noun(w, 1, MOVABLE_VIEW_NOUNS)
+    else:
+        return None
+    tail = w[i:]
+    dirs = [d for d in tail if d in DIRECTION_WORDS]
+    if len(dirs) != 1 or set(tail) - set(DIRECTION_WORDS) - SCROLL_TAIL - SCREENFUL - {"all", "one"}:
+        return None
+    direction = DIRECTION_WORDS[dirs[0]]
+    if "all the way" in " ".join(tail):  # "scroll all the way down" = to the bottom edge
+        return [{"name": "scroll_view", "input": {"edge": {"up": "top", "down": "bottom"}.get(direction, direction)}}], "scroll"
+    if "all" in tail:
+        return None
+    little, far = DISTANCE_LITTLE & set(tail), (DISTANCE_FAR | SCREENFUL) & set(tail)
+    if little and far:
+        return None
+    dist = {"distance": "little"} if little else {"distance": "far"} if far else {}
+    return [{"name": "scroll_view", "input": {"direction": direction, **dist}}], "scroll"
+
+
+def has_scroll(cmd: Command) -> bool:
+    """A scroll command the templates didn't take. Laya has no scroll_view and would read it as a move."""
+    return bool(SCROLL_WORDS & set(cmd.w))
+
+
+TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, scroll, move, animate]
 
 
 def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] | None:
@@ -453,4 +527,6 @@ def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] |
             return "fast", hit[0], f"rule: {hit[1]}"
     if has_motion(cmd):  # Laya has no animate_element: built here or left to the LLM
         return "llm", None, "motion needs the LLM"
+    if has_scroll(cmd):  # Laya has no scroll_view either
+        return "llm", None, "scroll needs the LLM"
     return None

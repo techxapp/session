@@ -6,7 +6,7 @@ import { type Animation, translate } from "./executor";
 const BOB_PX = 6;
 const STEP_PX = 60;
 
-const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+export const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
 /**
  * Tween `anim.id` from its place in `start` to its place in `end` (the executor's result), one frame per

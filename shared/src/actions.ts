@@ -159,6 +159,18 @@ export const DeleteElements = z.object({
   targets: z.array(ElementId).min(1),
 });
 
+export const ScrollView = z
+  .object({
+    direction: Direction.optional().describe("Scroll the view this way ('scroll down' shows what is further down)."),
+    distance: z.enum(["little", "some", "far"]).optional().describe("With direction: a quarter, half or a whole screen. Default 'some'."),
+    to: ElementId.optional().describe("Or bring this element to the middle of the screen."),
+    edge: z.enum(["top", "bottom", "left", "right"]).optional().describe("Or go to this edge of everything on the board."),
+    fit: z.literal("all").optional().describe("Or show everything on the board at once."),
+  })
+  .refine((v) => [v.direction, v.to, v.edge, v.fit].filter((x) => x !== undefined).length === 1, {
+    message: "Give exactly one of direction, to, edge or fit.",
+  });
+
 export const UndoLastCommand = z.object({});
 
 export const ClearBoard = z.object({
@@ -175,6 +187,7 @@ export const ACTION_SCHEMAS = {
   animate_element: AnimateElement,
   update_element: UpdateElement,
   delete_elements: DeleteElements,
+  scroll_view: ScrollView,
   undo_last_command: UndoLastCommand,
   clear_board: ClearBoard,
 } as const;
@@ -195,6 +208,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
     "Animate an existing element moving (walk, run, drive, fly) towards or away from another element, in a direction, or to a place. Use instead of move_element when the user describes motion ('moves towards', 'walks to', 'runs away from').",
   update_element: "Change an existing element's text, color or size.",
   delete_elements: "Remove elements (connected arrows are removed too).",
+  scroll_view:
+    "Scroll the view (the camera), never the board: in a direction, to an element, to an edge of the content, or to show everything.",
   undo_last_command: "Undo everything the previous command did.",
   clear_board: "Erase the entire board.",
 };
