@@ -19,6 +19,7 @@ import {
   loadSettings,
   requestConfig,
   saveSettings,
+  speechConfig,
   serverHasKey,
   type Settings,
 } from "./settings";
@@ -64,7 +65,8 @@ export default function App() {
     spoken.current = spoken.current.then(() => runRef.current(text)).catch(() => undefined);
   }, []);
   const getKeyterms = useCallback(() => (api ? boardKeyterms(api.getSceneElements()) : []), [api]);
-  const voice = useVoice(onSpoken, getKeyterms);
+  const getSpeech = useCallback(() => speechConfig(latest.current.settings, latest.current.health ?? null), []);
+  const voice = useVoice(onSpoken, getKeyterms, getSpeech);
 
   const status: ServerStatus = useMemo(() => {
     if (health === undefined) return { state: "checking" };

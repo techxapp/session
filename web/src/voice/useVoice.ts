@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { isTopLevel, labelOf } from "../board/executor";
+import { CLOUD_STT } from "@board/shared";
+import type { SpeechConfig } from "../settings";
+// SttMessage: from the speech servers (the Moonshine sidecar or the API server's cloud relay) or the browser's own.
+import { browserRecognition, listenInBrowser, type SttMessage } from "./browserSpeech";
 
 export type VoiceState = "off" | "starting" | "listening" | "stopping";
-
-/** Messages from the speech sidecar (stt/server.py). */
-type SttMessage =
-  | { type: "ready"; model: string }
-  | { type: "partial"; id: string; text: string }
-  | { type: "final"; id: string; text: string; ms: number }
-  | { type: "stopped" }
-  | { type: "error"; message: string };
 
 /** Collects mic samples into ~100 ms Float32 frames at the context's own rate (the sidecar resamples). */
 const WORKLET = `
@@ -30,9 +26,18 @@ registerProcessor("pcm-capture", PcmCapture);
 
 const MAX_KEYTERMS = 50;
 
-/** Board labels to bias recognition toward ("Postgres", "Auth service"); clip-art names are ordinary words. */
+/**
+ * Command words always sent as key terms because recognisers often get them wrong. Keep this short: every
+ * term takes a slot from the board labels, and a long list costs accuracy on words that aren't in it.
+ */
+export const COMMAND_KEYTERMS = ["draw", "flower"];
+
+/**
+ * Key terms to bias recognition toward: COMMAND_KEYTERMS, then the board labels ("Postgres", "Auth service"),
+ * newest kept. Clip-art names are ordinary words, so they're left out.
+ */
 export function boardKeyterms(elements: readonly ExcalidrawElement[]): string[] {
-  const seen = new Set<string>();
+  const seen = new Set(COMMAND_KEYTERMS.map((t) => t.toLowerCase()));
   const out: string[] = [];
   for (const el of elements) {
     if (!isTopLevel(el) || el.type === "image") continue;
@@ -42,7 +47,8 @@ export function boardKeyterms(elements: readonly ExcalidrawElement[]): string[] 
       out.push(label);
     }
   }
-  return out.slice(-MAX_KEYTERMS);
+  // The fixed words go first and the labels' share shrinks to fit, so the server's "newest 50" trim never drops them.
+  return [...COMMAND_KEYTERMS, ...out.slice(-(MAX_KEYTERMS - COMMAND_KEYTERMS.length))];
 }
 
 /** A finished line worth running: noise can complete a line of only punctuation ("." or "..."). */
@@ -52,22 +58,24 @@ interface Session {
   media?: MediaStream;
   ctx?: AudioContext;
   ws?: WebSocket;
+  rec?: ReturnType<typeof listenInBrowser>; // the browser's own recognition, instead of mic + socket
   line?: string; // id of the line being spoken
   terms?: string; // key terms last sent
   error?: string;
   closed: boolean;
 }
 
-function sttUrl() {
-  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/stt`;
+/** Moonshine runs in its own sidecar; Deepgram and AssemblyAI are relayed by the API server (it holds the .env keys). */
+function sttUrl(cloud: boolean) {
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${cloud ? "/api/stt" : "/stt"}`;
 }
 
-function openSocket(url: string): Promise<WebSocket> {
+function openSocket(url: string, down: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";
     ws.onopen = () => resolve(ws);
-    ws.onerror = () => reject(new Error("Speech server isn't running (start stt/server.py)."));
+    ws.onerror = () => reject(new Error(down));
   });
 }
 
@@ -79,20 +87,21 @@ function micError(err: unknown): string {
 }
 
 /**
- * Streams the mic to the local Moonshine sidecar. `onFinal` gets each completed spoken line;
- * `getKeyterms` is read when a new line starts, so recognition follows the labels on the board.
+ * Streams the mic to the speech provider `getSpeech` picks (read on each start). `onFinal` gets each completed
+ * spoken line; `getKeyterms` is read when a new line starts, so recognition follows the labels on the board.
  */
-export function useVoice(onFinal: (text: string) => void, getKeyterms: () => string[]) {
+export function useVoice(onFinal: (text: string) => void, getKeyterms: () => string[], getSpeech: () => SpeechConfig) {
   const [state, setState] = useState<VoiceState>("off");
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
   const session = useRef<Session | null>(null);
-  const cb = useRef({ onFinal, getKeyterms });
-  cb.current = { onFinal, getKeyterms };
+  const cb = useRef({ onFinal, getKeyterms, getSpeech });
+  cb.current = { onFinal, getKeyterms, getSpeech };
 
   /** Release everything the session holds; safe to call more than once. */
   const end = useCallback((s: Session) => {
     s.closed = true;
+    s.rec?.abort();
     s.media?.getTracks().forEach((t) => t.stop());
     if (s.ctx && s.ctx.state !== "closed") void s.ctx.close();
     if (s.ws && s.ws.readyState <= WebSocket.OPEN) s.ws.close();
@@ -131,6 +140,24 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
     session.current = s;
     setError(null);
     setState("starting");
+    const speech = cb.current.getSpeech();
+    if (speech.provider === "browser") {
+      const Rec = browserRecognition();
+      if (!Rec) {
+        setError("This browser has no built-in speech recognition (try Chrome, Edge or Safari, or pick another provider).");
+        return end(s);
+      }
+      // It asks for the mic itself and owns the audio, so no capture or socket here.
+      s.rec = listenInBrowser(Rec, {
+        message: (m) => onMessage(s, m),
+        end: (err) => {
+          if (session.current !== s) return;
+          if (err) setError(err);
+          end(s);
+        },
+      });
+      return;
+    }
     try {
       s.media = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -146,12 +173,17 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
       // Keep what is said while the socket connects: people start talking as soon as they click.
       const early: Float32Array[] = [];
       node.port.onmessage = (e) => early.push(e.data);
-      const ws = await openSocket(sttUrl());
+      const cloud = CLOUD_STT.includes(speech.provider);
+      const ws = await openSocket(
+        sttUrl(cloud),
+        cloud ? "The API server isn't reachable." : "Speech server isn't running (start stt/server.py).",
+      );
       s.ws = ws;
       if (s.closed) return end(s);
       const terms = cb.current.getKeyterms();
       s.terms = terms.join("\n");
-      ws.send(JSON.stringify({ type: "start", sampleRate: s.ctx.sampleRate, keyterms: terms }));
+      const which = cloud ? { provider: speech.provider, apiKey: speech.apiKey } : {};
+      ws.send(JSON.stringify({ type: "start", sampleRate: s.ctx.sampleRate, keyterms: terms, ...which }));
       early.forEach((frame) => ws.send(frame));
       node.port.onmessage = (e) => ws.readyState === WebSocket.OPEN && ws.send(e.data);
       ws.onmessage = (e) => onMessage(s, JSON.parse(e.data) as SttMessage);
@@ -166,13 +198,16 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
     }
   }, [end, onMessage]);
 
-  /** Stop the mic now, but let the sidecar finish the line being spoken (it may still run as a command). */
+  /** Stop the mic now, but let the speech server finish the line being spoken (it may still run as a command). */
   const stop = useCallback(() => {
     const s = session.current;
     if (!s) return;
-    if (s.ws?.readyState !== WebSocket.OPEN) return end(s);
-    s.media?.getTracks().forEach((t) => t.stop());
-    s.ws.send(JSON.stringify({ type: "stop" }));
+    if (s.rec) s.rec.stop();
+    else if (s.ws?.readyState !== WebSocket.OPEN) return end(s);
+    else {
+      s.media?.getTracks().forEach((t) => t.stop());
+      s.ws.send(JSON.stringify({ type: "stop" }));
+    }
     setState("stopping");
     window.setTimeout(() => end(s), 3000);
   }, [end]);

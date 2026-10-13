@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CommandEvent, CommandRequest, HealthInfo, ModelConfig } from "@board/shared";
 import { DEFAULT_EFFORT, type ReasoningEffort } from "./effort";
 import type { Provider } from "./provider";
+import { attachStt, sttKeyed, type Connect, type SttSettings } from "./stt";
 
 /** Model settings from the browser; see ModelConfig. Empty strings mean "not set". */
 const Config = z
@@ -35,10 +36,18 @@ export interface AppOptions {
   listModels?: (config: ModelConfig) => Promise<string[]>;
   /** .env facts for /api/health that the default provider doesn't carry. */
   info?: { baseUrl: string; keyedEndpoints: string[]; effort: ReasoningEffort };
+  /** Cloud speech-to-text on the WebSocket /api/stt; without it only the Moonshine sidecar is offered. */
+  stt?: SttSettings;
+  /** Opens the upstream speech socket (tests pass a fake). */
+  sttConnect?: Connect;
 }
 
 export function buildApp(provider: Provider, opts: AppOptions = {}) {
   const app = Fastify({ logger: opts.logger === false ? false : { level: process.env.LOG_LEVEL || "info" } });
+  if (opts.stt) {
+    const wss = attachStt(app.server, opts.stt, app.log, opts.sttConnect);
+    app.addHook("onClose", async () => wss.clients.forEach((c) => c.terminate()));
+  }
 
   app.get("/api/health", async (): Promise<HealthInfo> => ({
     ok: true,
@@ -50,6 +59,7 @@ export function buildApp(provider: Provider, opts: AppOptions = {}) {
     effort: opts.info?.effort ?? DEFAULT_EFFORT,
     objectMode: provider.objects,
     fastPath: Boolean(provider.fastPath),
+    stt: { provider: opts.stt?.provider ?? "moonshine", keyed: opts.stt ? sttKeyed(opts.stt) : [] },
   }));
 
   app.post("/api/models", async (request, reply) => {

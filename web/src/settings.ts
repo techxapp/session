@@ -1,4 +1,13 @@
-import { endpointKey, type ApiStyle, type HealthInfo, type ModelConfig, type ObjectMode, type ReasoningEffort } from "@board/shared";
+import {
+  endpointKey,
+  type ApiStyle,
+  type HealthInfo,
+  type ModelConfig,
+  type ObjectMode,
+  type ReasoningEffort,
+  type SttProvider,
+  CLOUD_STT,
+} from "@board/shared";
 
 /**
  * Model settings chosen in the Settings panel, kept in this browser's localStorage. They override the
@@ -57,15 +66,30 @@ export interface Settings {
   customUrls: string[];
   /** Keyed by SERVER or endpointKey(provider, baseUrl). */
   profiles: Record<string, Profile>;
+  speech: SpeechSettings;
+}
+
+/** Speech-to-text choice; the provider defaults to the server's STT_PROVIDER, each cloud key to its .env key. */
+export interface SpeechSettings {
+  provider?: SttProvider;
+  keys: Partial<Record<SttProvider, string>>;
+}
+
+/** What the voice hook needs to start listening. */
+export interface SpeechConfig {
+  provider: SttProvider;
+  apiKey?: string;
 }
 
 const STORAGE_KEY = "voice-board:settings:v1";
-export const DEFAULT_SETTINGS: Settings = { active: SERVER, customUrls: [], profiles: {} };
+export const DEFAULT_SETTINGS: Settings = { active: SERVER, customUrls: [], profiles: {}, speech: { keys: {} } };
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
+    if (!raw) return DEFAULT_SETTINGS;
+    const saved = JSON.parse(raw);
+    return { ...DEFAULT_SETTINGS, ...saved, speech: { keys: {}, ...saved.speech } };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -111,6 +135,12 @@ export function effectiveModel(s: Settings, health: HealthInfo | null): string |
   if (!c) return health?.model;
   const onEnvEndpoint = health && endpointKey(c.provider, c.baseUrl) === endpointKey(health.provider, health.baseUrl);
   return onEnvEndpoint ? health.model : c.models[0];
+}
+
+/** The speech provider the mic will use, and the browser's key for it (else the server's .env key). */
+export function speechConfig(s: Settings, health: HealthInfo | null): SpeechConfig {
+  const provider = s.speech.provider ?? health?.stt.provider ?? "moonshine";
+  return { provider, apiKey: CLOUD_STT.includes(provider) ? s.speech.keys[provider] || undefined : undefined };
 }
 
 /** What to send with each command, or undefined to use .env as is. */

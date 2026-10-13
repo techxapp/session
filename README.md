@@ -4,7 +4,7 @@ Session helper: a whiteboard that draws diagrams from what you say. You describe
 
 It's built as a "System 1" assistant (the idea behind TypeSafe's Jev). A small, fast model turns each command into **typed board actions** such as `add_shape`, `add_arrow` or `move_element`. The browser validates those actions and applies them as they stream in. The full roadmap is in [docs/PLAN.md](docs/PLAN.md).
 
-**Status: milestone 1 of 5.** You type commands, or speak them with the optional local speech recognition (early milestone 2 work; see [Voice input](#optional-voice-input-local-moonshine)).
+**Status: milestone 1 of 5.** You type commands, or speak them with the optional local speech recognition (early milestone 2 work; see [Voice input](#optional-voice-input-local-moonshine-or-cloud)).
 
 ## Quick start
 
@@ -75,7 +75,7 @@ FASTPATH_URL=http://127.0.0.1:8788 npm run dev
 
 The checkpoint is produced by `eval/make_train.py` + `eval/train_laya.py` (see `eval/`); it is not in the repo.
 
-### Optional: voice input (local Moonshine)
+### Optional: voice input (local Moonshine or cloud)
 
 The mic button in the command bar streams your microphone to `stt/server.py`, which runs [Moonshine](https://github.com/moonshine-ai/moonshine) speech recognition on the CPU. Nothing leaves the machine, there is no per-hour cost and it uses no GPU memory. While you talk, the words being recognised show in the command bar. When you pause, the finished sentence runs as a command, exactly as if you had typed it. Sentences spoken while a command is still running wait their turn instead of cancelling it. Labels on the board (such as "Postgres") are passed to the recogniser so it spells them the way the board does.
 
@@ -93,6 +93,18 @@ Then run `npm run dev` as usual. Vite forwards `/stt` to port 8789. Click the mi
 - Other variables: `STT_PORT` (8789; Vite's proxy expects 8789), `STT_HOST` (127.0.0.1), `MOONSHINE_VOICE_CACHE` (where models are kept).
 - It doesn't yet tell your voice apart from other people's: anything the mic hears clearly can run as a command. A headset helps.
 - One tab listens at a time. Starting the mic in another tab stops it in the first.
+
+**Cloud instead (Deepgram or AssemblyAI).** No sidecar or Python needed: the API server relays the mic to the service. Pick the provider under *Speech to text* in Settings (the gear next to the status pill) and paste a key there, or set them in `.env`:
+
+```
+STT_PROVIDER=deepgram            # moonshine (default) | deepgram | assemblyai | browser
+DEEPGRAM_API_KEY=...             # or ASSEMBLYAI_API_KEY=...
+# DEEPGRAM_MODEL=nova-3   ASSEMBLYAI_MODEL=universal-streaming-english
+```
+
+The Settings choice overrides `STT_PROVIDER` for that browser and applies the next time the mic starts. A `.env` key is only sent to its own service. Board labels are passed as key terms to both services. Deepgram takes them only when the mic starts; AssemblyAI is updated as the board changes. Audio goes to the service you pick, and it is billed by the minute while the mic is on.
+
+**Browser.** The *Browser* choice uses the browser's own speech recognition (the Web Speech API). It needs no key, no sidecar and no server. It works in Chrome, Edge and Safari, but not Firefox, and Brave has no speech service. Chrome sends the audio to Google and Edge to Microsoft. It ignores board key terms. Browsers end recognition after a pause, so it restarts on its own, and a word spoken right at a restart can be lost.
 
 ## Scripts
 
@@ -128,4 +140,4 @@ The sidecar reads its own variables: `LAYA_CHECKPOINT` (unset = rules only), `FA
 
 ## Licenses
 
-Excalidraw (MIT), React (MIT), Fastify (MIT), zod (MIT), lucide-react (ISC), Anthropic SDK (MIT), OpenAI SDK (Apache-2.0). Optional fast path: Laya and its ModernBERT base (Apache-2.0), PyTorch (BSD). Optional voice input: Moonshine `moonshine-voice` and its English streaming models (MIT), websockets (BSD-3-Clause), NumPy (BSD). Excalidraw's fonts are self-hosted from the npm package (OFL). Object clip-art: Microsoft Fluent Emoji (MIT), see `web/public/objects/LICENSE.md` (generated).
+Excalidraw (MIT), React (MIT), Fastify (MIT), zod (MIT), lucide-react (ISC), Anthropic SDK (MIT), OpenAI SDK (Apache-2.0). Optional fast path: Laya and its ModernBERT base (Apache-2.0), PyTorch (BSD). Optional voice input: Moonshine `moonshine-voice` and its English streaming models (MIT), websockets (BSD-3-Clause), NumPy (BSD); cloud speech relay: ws (MIT). Excalidraw's fonts are self-hosted from the npm package (OFL). Object clip-art: Microsoft Fluent Emoji (MIT), see `web/public/objects/LICENSE.md` (generated).

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, Plus, RefreshCw, Settings2, X } from "lucide-react";
-import type { HealthInfo, ObjectMode, ReasoningEffort } from "@board/shared";
+import { CLOUD_STT, type HealthInfo, type ObjectMode, type ReasoningEffort, type SttProvider } from "@board/shared";
 import { fetchModels } from "../api";
 import {
   SERVER,
@@ -10,8 +10,10 @@ import {
   profileKey,
   requestConfig,
   serverHasKey,
+  speechConfig,
   type Profile,
   type Settings,
+  type SpeechSettings,
 } from "../settings";
 import { modelName } from "./StatusPill";
 
@@ -27,9 +29,21 @@ const OBJECT_MODES: { value: ObjectMode; label: string; title: string }[] = [
   { value: "enum", label: "Enum", title: "The model picks from the curated list of ~190 pictures (bigger prompt)" },
   { value: "text", label: "Text", title: "The model names any thing; the server maps it to ~1,600 pictures or draws a labelled box" },
 ];
+const SPEECH: { value: SttProvider; label: string; title: string }[] = [
+  { value: "moonshine", label: "Moonshine", title: "On this computer (the stt/server.py sidecar): free, CPU only" },
+  { value: "deepgram", label: "Deepgram", title: "Deepgram streaming (Nova-3), relayed by the API server" },
+  { value: "assemblyai", label: "AssemblyAI", title: "AssemblyAI Universal Streaming, relayed by the API server" },
+  {
+    value: "browser",
+    label: "Browser",
+    title:
+      "The browser's built-in Web Speech API: no key or server; Chrome sends audio to Google, Edge to Microsoft; no board key terms; not in Firefox",
+  },
+];
+const speechName = (p: SttProvider) => SPEECH.find((o) => o.value === p)!.label;
 const OTHER = "\u0000other";
 
-/** Model settings, saved per base URL in this browser; they override the server's .env. */
+/** Model and speech settings, saved in this browser (models per base URL); they override the server's .env. */
 export function SettingsPanel({ settings, health, update, onClose }: Props) {
   const choice = activeChoice(settings);
   const key = profileKey(choice);
@@ -37,8 +51,8 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
   const keyFromServer = serverHasKey(choice, health);
   const hasKey = Boolean(profile.apiKey) || keyFromServer;
   const model = effectiveModel(settings, health);
+  const speech = speechConfig(settings, health);
 
-  const [showKey, setShowKey] = useState(false);
   const [adding, setAdding] = useState(false);
   const [url, setUrl] = useState("");
   const [typingModel, setTypingModel] = useState(false);
@@ -48,6 +62,7 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
 
   const setProfile = (patch: Partial<Profile>, forKey = key) =>
     update((s) => ({ ...s, profiles: { ...s.profiles, [forKey]: { ...s.profiles[forKey], ...patch } } }));
+  const setSpeech = (patch: Partial<SpeechSettings>) => update((s) => ({ ...s, speech: { ...s.speech, ...patch } }));
   const select = (active: string) => {
     update((s) => ({ ...s, active }));
     setTypingModel(false);
@@ -106,10 +121,10 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
   const models = [...new Set([...(profile.models ?? choice?.models ?? []), ...(model ? [model] : [])])];
 
   return (
-    <div className="settings" ref={panel} role="dialog" aria-label="Model settings">
+    <div className="settings" ref={panel} role="dialog" aria-label="Settings">
       <header className="settings-head">
         <Settings2 size={15} aria-hidden />
-        <span>Model settings</span>
+        <span>Settings</span>
         <button className="icon-btn" onClick={onClose} aria-label="Close settings">
           <X size={16} />
         </button>
@@ -165,25 +180,12 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
         {choice && (
           <label className="field">
             <span className="field-label">API key</span>
-            <div className="input-row">
-              <input
-                type={showKey ? "text" : "password"}
-                value={profile.apiKey ?? ""}
-                onChange={(e) => setProfile({ apiKey: e.target.value.trim() || undefined, models: undefined })}
-                onBlur={autoLoad}
-                placeholder={keyFromServer ? "Using the server's key from .env" : "Paste your API key"}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => setShowKey((v) => !v)}
-                aria-label={showKey ? "Hide key" : "Show key"}
-              >
-                {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </div>
+            <KeyInput
+              value={profile.apiKey}
+              onChange={(apiKey) => setProfile({ apiKey, models: undefined })}
+              onBlur={autoLoad}
+              fromServer={keyFromServer}
+            />
           </label>
         )}
 
@@ -246,12 +248,63 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
             defaultLabel={`Default (${health?.objectMode ?? "enum"})`}
           />
         </div>
+
+        <div className="field">
+          <span className="field-label">Speech to text</span>
+          <Segmented
+            value={settings.speech.provider}
+            onChange={(provider) => setSpeech({ provider })}
+            options={SPEECH}
+            defaultLabel={`Default (${speechName(health?.stt.provider ?? "moonshine")})`}
+          />
+        </div>
+
+        {CLOUD_STT.includes(speech.provider) && (
+          <label className="field">
+            <span className="field-label">{speechName(speech.provider)} API key</span>
+            <KeyInput
+              value={settings.speech.keys[speech.provider]}
+              onChange={(key) => setSpeech({ keys: { ...settings.speech.keys, [speech.provider]: key } })}
+              fromServer={Boolean(health?.stt.keyed.includes(speech.provider))}
+            />
+          </label>
+        )}
       </div>
 
       <footer className="settings-foot">
         {choice && !hasKey ? "Add an API key to use this provider. " : ""}
-        Saved in this browser per base URL and used instead of the server's .env.
+        Saved in this browser (models per base URL) and used instead of the server's .env. Speech changes apply when the mic next starts.
       </footer>
+    </div>
+  );
+}
+
+function KeyInput({
+  value,
+  onChange,
+  onBlur,
+  fromServer,
+}: {
+  value: string | undefined;
+  onChange: (key: string | undefined) => void;
+  onBlur?: () => void;
+  fromServer: boolean;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="input-row">
+      <input
+        type={show ? "text" : "password"}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value.trim() || undefined)}
+        onBlur={onBlur}
+        placeholder={fromServer ? "Using the server's key from .env" : "Paste your API key"}
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <button type="button" className="icon-btn" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide key" : "Show key"}>
+        {show ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
     </div>
   );
 }

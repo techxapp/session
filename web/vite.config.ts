@@ -10,7 +10,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8787",
+      // ws: the cloud speech relay (/api/stt) is a WebSocket on the API server.
+      "/api": { target: "http://localhost:8787", ws: true },
       // Speech-to-text sidecar (stt/server.py); 127.0.0.1 because it binds IPv4 only.
       "/stt": { target: "ws://127.0.0.1:8789", ws: true },
     },

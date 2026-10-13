@@ -25,7 +25,19 @@ describe("boardKeyterms", () => {
       { name: "add_object", input: { object: "tree" } },
       { name: "add_arrow", input: { from: "db", to: "db2" } },
     ]);
-    expect(boardKeyterms(els)).toEqual(["Postgres", "Auth v2"]);
+    expect(boardKeyterms(els)).toEqual(["draw", "flower", "Postgres", "Auth v2"]);
+  });
+
+  it("always keeps the command words, and caps the total at 50", () => {
+    const els = board([
+      { name: "add_shape", input: { kind: "rectangle", label: "Flower" } },
+      ...Array.from({ length: 60 }, (_, i) => ({ name: "add_shape" as const, input: { kind: "rectangle" as const, label: `Box ${i}` } })),
+    ]);
+    const terms = boardKeyterms(els);
+    expect(terms).toHaveLength(50);
+    expect(terms.slice(0, 2)).toEqual(["draw", "flower"]);
+    expect(terms).not.toContain("Flower");
+    expect(terms.at(-1)).toBe("Box 59");
   });
 });
 

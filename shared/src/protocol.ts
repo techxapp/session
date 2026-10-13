@@ -50,6 +50,15 @@ export interface CommandRequest {
   config?: ModelConfig;
 }
 
+/**
+ * Speech-to-text backend. "moonshine" = the local sidecar (stt/server.py, WebSocket /stt); the cloud ones go
+ * through the API server's /api/stt WebSocket, which speaks the same protocol (see server/src/stt.ts);
+ * "browser" = the browser's own Web Speech API (web/src/voice/browserSpeech.ts), no server involved.
+ */
+export type SttProvider = "moonshine" | "deepgram" | "assemblyai" | "browser";
+export const STT_PROVIDERS: SttProvider[] = ["moonshine", "deepgram", "assemblyai", "browser"];
+export const CLOUD_STT: SttProvider[] = ["deepgram", "assemblyai"];
+
 /** GET /api/health: the server's .env defaults (never its keys). */
 export interface HealthInfo {
   ok: boolean;
@@ -63,6 +72,8 @@ export interface HealthInfo {
   effort: ReasoningEffort;
   objectMode: ObjectMode;
   fastPath: boolean;
+  /** STT_PROVIDER, and the cloud speech providers the server has a .env key for. */
+  stt: { provider: SttProvider; keyed: SttProvider[] };
 }
 
 /** Official API base URLs, used when a config leaves baseUrl empty. */
