@@ -6,9 +6,11 @@ import type { BoardAction, CommandEvent, HealthInfo } from "@board/shared";
 import { Settings2 } from "lucide-react";
 import { checkHealth } from "./api";
 import { loadObjectFiles } from "./board/objects";
+import { loadPlotFiles } from "./board/plots";
 import { useCommandRunner } from "./board/useCommandRunner";
 import { ActivityPanel } from "./components/ActivityPanel";
 import { CommandDock } from "./components/CommandDock";
+import { PlotHover } from "./components/PlotHover";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPill, type ServerStatus } from "./components/StatusPill";
 import { boardKeyterms, useVoice } from "./voice/useVoice";
@@ -128,9 +130,11 @@ export default function App() {
     }, 400);
   }, []);
 
-  // Saved boards keep only element JSON; fetch the clip-art their object images point at.
+  // Saved boards keep only element JSON; fetch the clip-art their object images point at and redraw graphs/charts.
   useEffect(() => {
-    if (api) void loadObjectFiles(api);
+    if (!api) return;
+    void loadObjectFiles(api);
+    void loadPlotFiles(api);
   }, [api]);
 
   // Dev-only hook for driving the board without the model (used by tests and demos).
@@ -182,6 +186,8 @@ export default function App() {
           <MainMenu.DefaultItems.Help />
         </MainMenu>
       </Excalidraw>
+
+      <PlotHover api={api} />
 
       {boardEmpty && runner.log.length === 0 && (
         <div className="empty-state" aria-hidden>

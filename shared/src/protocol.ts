@@ -3,7 +3,7 @@ import type { BoardAction } from "./actions";
 /** Compact description of the board sent with each command, so the model can resolve references. */
 export interface SceneElementSummary {
   id: string;
-  type: "rectangle" | "ellipse" | "diamond" | "sticky" | "text" | "arrow" | "image" | "other";
+  type: "rectangle" | "ellipse" | "diamond" | "sticky" | "text" | "arrow" | "image" | "graph" | "chart" | "other";
   label?: string;
   x: number;
   y: number;

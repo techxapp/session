@@ -2,9 +2,13 @@ import { Graph, layout } from "@dagrejs/dagre";
 import { convertToExcalidrawElements, newElementWith } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawElement, ExcalidrawLinearElement } from "@excalidraw/excalidraw/element/types";
-import type { BoardAction, Placement, Side } from "@board/shared";
+import { type BoardAction, type Color, type Placement, type Side, parseEquation } from "@board/shared";
 import { type Box, LANE, besides, connector, findFreeSpot, regionPoint } from "./geometry";
+import type { ChartSpec } from "./chart";
+import { DEFAULT_X, type GraphSpec, fitY, graphOf } from "./graph";
 import { OBJECT_SIZES, objectFileId, objectOf } from "./objects";
+import { PLOT_SIZES, SERIES_COLORS } from "./plot-base";
+import { type PlotSpec, plotFileId, plotLabel, plotOf } from "./plots";
 import { FONT, NUDGE, PALETTE, ROUGHNESS, SHAPE_SIZES, TEXT_SIZES, fitLabel } from "./style";
 
 type El = ExcalidrawElement;
@@ -46,7 +50,10 @@ export const boxOf = (e: El): Box => ({ x: e.x, y: e.y, w: e.width, h: e.height 
 /** An element's text: its own (text), its bound label (shapes, arrows), or the object it draws (clip-art). */
 export function labelOf(elements: readonly El[], el: El): string | undefined {
   if (el.type === "text") return el.originalText ?? el.text;
-  if (el.type === "image") return objectOf(el);
+  if (el.type === "image") {
+    const plot = plotOf(el);
+    return plot ? plotLabel(plot) : objectOf(el);
+  }
   const bound = elements.find((t) => t.type === "text" && !t.isDeleted && t.containerId === el.id);
   return bound && bound.type === "text" ? (bound.originalText ?? bound.text) : undefined;
 }
@@ -69,6 +76,10 @@ export function applyAction(elements: readonly El[], action: BoardAction, ctx: E
       return generateDiagram(elements, action.input, ctx);
     case "add_dimension":
       return addDimension(elements, action.input, ctx);
+    case "plot_graph":
+      return plotGraph(elements, action.input, ctx);
+    case "add_chart":
+      return addChart(elements, action.input, ctx);
     case "move_element":
       return moveElement(elements, action.input, ctx);
     case "animate_element":
@@ -405,6 +416,112 @@ function addDimension(
   return { elements: [...elements, ...created], touched: [id] };
 }
 
+const colorHex = (names: readonly Color[] | undefined, n: number) =>
+  Array.from({ length: n }, (_, i) => PALETTE[names?.[i] ?? SERIES_COLORS[i % SERIES_COLORS.length]].stroke);
+
+/** A graph or chart image element for `spec` (its PNG is drawn by loadPlotFiles). */
+function plotElement(id: string, spec: PlotSpec, box: { x: number; y: number; w: number; h: number }) {
+  return convertToExcalidrawElements(
+    [
+      {
+        type: "image",
+        id,
+        x: box.x,
+        y: box.y,
+        width: box.w,
+        height: box.h,
+        fileId: plotFileId(spec),
+        status: "saved",
+        customData: { ...spec },
+      },
+    ],
+    { regenerateIds: false },
+  );
+}
+
+/** Replace a plot's spec (and so its file), keeping id, position, size, z-order and arrow bindings. */
+function respec(elements: readonly El[], target: El, spec: PlotSpec): El[] {
+  return elements.map((e) =>
+    e.id === target.id ? newElementWith(e, { customData: { ...spec }, fileId: plotFileId(spec) } as Partial<El>) : e,
+  );
+}
+
+function plotGraph(elements: readonly El[], input: Extract<BoardAction, { name: "plot_graph" }>["input"], ctx: ExecContext): ExecResult {
+  const labels = input.equations.map((eq) => parseEquation(eq).label);
+  const xRange = (base: [number, number]): [number, number] => {
+    let [lo, hi] = [input.x_min ?? base[0], input.x_max ?? base[1]];
+    if (lo >= hi) [lo, hi] = input.x_min !== undefined ? [lo, lo + (base[1] - base[0])] : [hi - (base[1] - base[0]), hi];
+    return [lo, hi];
+  };
+  const yRange = (equations: string[], x: [number, number], fallback?: [number, number]) => {
+    if (input.y_min !== undefined && input.y_max !== undefined) return { y: [input.y_min, input.y_max] as [number, number], yAuto: false };
+    if (fallback) return { y: fallback, yAuto: false };
+    const fit = fitY(equations, x);
+    const y: [number, number] = [input.y_min ?? fit[0], input.y_max ?? fit[1]];
+    if (y[0] >= y[1]) return { y: fit, yAuto: true };
+    return { y, yAuto: input.y_min === undefined && input.y_max === undefined };
+  };
+
+  if (input.add_to) {
+    const target = resolve(elements, input.add_to, ctx);
+    const old = graphOf(target);
+    if (!old) throw new ActionError("Curves can only be added to a graph of equations.");
+    const equations = [...old.equations, ...labels];
+    if (equations.length > 6) throw new ActionError("A graph holds at most 6 curves.");
+    const x = xRange(old.x);
+    const xChanged = x[0] !== old.x[0] || x[1] !== old.x[1];
+    const added = colorHex(undefined, equations.length).slice(old.colors.length);
+    const colors = [...old.colors, ...added.map((c, j) => (input.colors?.[j] ? PALETTE[input.colors[j]].stroke : c))];
+    const spec: GraphSpec = {
+      ...old,
+      equations,
+      colors,
+      x,
+      ...yRange(equations, x, old.yAuto || xChanged ? undefined : old.y),
+      ...(input.title ? { title: input.title } : {}),
+    };
+    touch(ctx, target.id);
+    return { elements: respec(elements, target, spec), touched: [target.id] };
+  }
+
+  const size = PLOT_SIZES[input.size ?? "medium"];
+  const x = xRange(DEFAULT_X);
+  const spec: GraphSpec = {
+    kind: "graph",
+    equations: labels,
+    colors: colorHex(input.colors, labels.length),
+    x,
+    ...yRange(labels, x),
+    ...(input.title ? { title: input.title } : {}),
+    w: size.w,
+    h: size.h,
+  };
+  const pos = place(elements, input.placement, size.w, size.h, ctx);
+  const id = allocateId(elements, input.id, ctx);
+  touch(ctx, id);
+  return { elements: [...elements, ...plotElement(id, spec, { ...pos, ...size })], touched: [id] };
+}
+
+function addChart(elements: readonly El[], input: Extract<BoardAction, { name: "add_chart" }>["input"], ctx: ExecContext): ExecResult {
+  const size = PLOT_SIZES[input.size ?? "medium"];
+  const pie = input.kind === "pie" || input.kind === "donut";
+  const spec: ChartSpec = {
+    kind: "chart",
+    chart: input.kind,
+    labels: input.labels,
+    series: input.series.map((s) => ({ ...(s.name ? { name: s.name } : {}), values: s.values })),
+    colors: colorHex(input.colors, pie ? input.labels.length : input.series.length),
+    ...(input.title ? { title: input.title } : {}),
+    ...(input.unit ? { unit: input.unit } : {}),
+    w: size.w,
+    h: size.h,
+  };
+  const pos = place(elements, input.placement, size.w, size.h, ctx);
+  const id = allocateId(elements, input.id, ctx);
+  touch(ctx, id);
+  return { elements: [...elements, ...plotElement(id, spec, { ...pos, ...size })], touched: [id] };
+}
+
 /** Shift elements by (dx,dy) together with their bound labels, then re-route attached arrows. */
 export function translate(elements: readonly El[], ids: Set<string>, dx: number, dy: number): El[] {
   const moved = elements.map((e) =>
@@ -597,6 +714,29 @@ function updateElement(
       return newElementWith(e, patch as Partial<El>);
     });
     if (target.type === "arrow" && input.label) next = relabelArrow(next, target, input.label);
+    return { elements: next, touched: [target.id] };
+  }
+
+  // Graphs/charts: label = title, colour = first curve/series/slice, size/scale resize (centre kept).
+  const plot = plotOf(target);
+  if (plot) {
+    let next: El[] = [...elements];
+    if (input.label !== undefined || input.color) {
+      const spec = {
+        ...plot,
+        ...(input.label !== undefined ? { title: input.label || undefined } : {}),
+        ...(input.color ? { colors: [PALETTE[input.color].stroke, ...plot.colors.slice(1)] } : {}),
+      } as PlotSpec;
+      next = respec(next, target, spec);
+    }
+    const factor = input.scale ?? (input.size ? PLOT_SIZES[input.size].w / target.width : undefined);
+    if (factor) {
+      const [w, h] = [target.width * factor, target.height * factor];
+      next = next.map((e) =>
+        e.id === target.id ? newElementWith(e, { x: e.x + (e.width - w) / 2, y: e.y + (e.height - h) / 2, width: w, height: h }) : e,
+      );
+      next = rerouteArrows(next, new Set([target.id]));
+    }
     return { elements: next, touched: [target.id] };
   }
 

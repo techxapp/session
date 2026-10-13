@@ -20,14 +20,15 @@ export function objectOf(el: ExcalidrawElement): string | undefined {
   return el.type === "image" && el.customData?.kind === "object" ? (el.customData.object as string) : undefined;
 }
 
-async function rasterize(svg: string): Promise<DataURL> {
+/** SVG text -> PNG data URL, `px` wide. */
+export async function rasterize(svg: string, px = RASTER_PX): Promise<DataURL> {
   const img = new Image();
   img.src = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   try {
     await img.decode();
     const canvas = document.createElement("canvas");
-    canvas.width = RASTER_PX;
-    canvas.height = Math.round((RASTER_PX * img.naturalHeight) / img.naturalWidth);
+    canvas.width = px;
+    canvas.height = Math.round((px * img.naturalHeight) / img.naturalWidth);
     canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/png") as DataURL;
   } finally {

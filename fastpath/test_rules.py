@@ -217,5 +217,30 @@ class Diagram(unittest.TestCase):
         self.assertEqual(got and got[0], "fast")
 
 
+class Plot(unittest.TestCase):
+    def test_needs_llm(self):
+        for text in [
+            "plot y = x^2",
+            "y = 2x + 1",
+            "draw the graph of sin x",
+            "f(x) = x**3",
+            "make a pie chart of rent 40 food 30 other 30",
+            "draw a column chart of sales",
+            "add a bar chart",
+            "please draw a parabola",
+        ]:
+            with self.subTest(text):
+                got = rule_command(text, SCENE)
+                self.assertEqual(got and got[:2], ("llm", None))
+                self.assertEqual(got[2], "graph needs the LLM")
+
+    def test_org_chart_is_a_diagram(self):
+        self.assertEqual(rule_command("make an org chart", SCENE)[2], "diagram needs the LLM")
+
+    def test_templates_still_win(self):
+        got = rule_command("add a box labelled chart", SCENE)
+        self.assertEqual(got and got[0], "fast")
+
+
 if __name__ == "__main__":
     unittest.main()

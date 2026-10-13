@@ -7,6 +7,7 @@ import { streamCommand } from "../api";
 import { playAnimation } from "./animate";
 import { ActionError, applyAction } from "./executor";
 import { loadObjectFiles } from "./objects";
+import { loadPlotFiles } from "./plots";
 import { summarize, visibleArea } from "./summary";
 import { boundsOf, frame, isInSafeArea, planScroll, playScroll } from "./view";
 
@@ -53,6 +54,7 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
         };
       });
       api.updateScene({ elements: restored, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+      void loadPlotFiles(api); // an undone graph edit may point back at a file this session never drew
     },
     [api],
   );
@@ -108,6 +110,7 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
               if (res.animation) await playAnimation(api, before, res.elements, res.animation, controller.signal);
               else api.updateScene({ elements: res.elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
               if (ev.action.name === "add_object") void loadObjectFiles(api);
+              else void loadPlotFiles(api); // new or changed graphs/charts (cheap scan otherwise)
               touched.push(...res.touched);
               applied++;
               changed++;

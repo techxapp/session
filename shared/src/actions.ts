@@ -1,6 +1,7 @@
 import { z } from "zod";
 import objects from "../objects.json";
 import moreObjects from "../objects-more.json";
+import { equationError } from "./math";
 
 /**
  * Board actions are the typed "System 1" decisions: every voice/text command
@@ -155,6 +156,73 @@ export const AddDimension = z
     message: "Give either target, or both from and to.",
   });
 
+const EquationText = z
+  .string()
+  .min(1)
+  .max(200)
+  .superRefine((v, ctx) => {
+    const err = equationError(v);
+    if (err) ctx.addIssue({ code: "custom", message: `"${v}": ${err}` });
+  });
+
+export const PlotGraph = z
+  .object({
+    id: NewId.optional(),
+    equations: z
+      .array(EquationText)
+      .min(1)
+      .max(6)
+      .describe(
+        "Functions of x, one curve each: 'y = x^2', 'y = 2x + 1', 'sin(x)'. Use ^ for powers, * or juxtaposition for products, and sin cos tan sqrt abs ln log exp (with brackets: sin(2x)).",
+      ),
+    add_to: ElementId.optional().describe("An existing graph: add these curves to it instead of drawing a new graph."),
+    x_min: z.number().optional().describe("Left end of the x axis. Default -10 (with add_to: the graph's current range)."),
+    x_max: z.number().optional(),
+    y_min: z.number().optional().describe("Omit y_min/y_max to fit the curves."),
+    y_max: z.number().optional(),
+    title: z.string().max(100).optional(),
+    colors: z.array(Color).max(6).optional().describe("One per equation, in order. Default blue, red, green, purple, orange, teal."),
+    size: z.enum(["small", "medium", "large"]).optional().describe("Default 'medium'."),
+    placement: Placement.optional(),
+  })
+  .refine((v) => v.x_min === undefined || v.x_max === undefined || v.x_min < v.x_max, { message: "x_min must be below x_max." })
+  .refine((v) => v.y_min === undefined || v.y_max === undefined || v.y_min < v.y_max, { message: "y_min must be below y_max." });
+
+export const CHART_KINDS = ["column", "bar", "line", "area", "pie", "donut"] as const;
+
+export const AddChart = z
+  .object({
+    id: NewId.optional(),
+    kind: z
+      .enum(CHART_KINDS)
+      .describe("'column' = vertical bars, 'bar' = horizontal bars, 'line', 'area', 'pie', 'donut' (pie with a hole)."),
+    labels: z
+      .array(z.string().min(1).max(40))
+      .min(1)
+      .max(24)
+      .describe("Category names: the x axis of column/line/area, the rows of bar, the slices of pie/donut."),
+    series: z
+      .array(
+        z.object({
+          name: z.string().max(40).optional().describe("Shown in the legend when there are several series."),
+          values: z.array(z.number()).min(1).max(24).describe("One number per label, in the same order."),
+        }),
+      )
+      .min(1)
+      .max(6)
+      .describe("Data series. pie/donut take exactly one."),
+    title: z.string().max(100).optional(),
+    unit: z.string().max(12).optional().describe("Shown after values, e.g. '%', 'k', ' kg'. Use prefix '$' as unit '$'."),
+    colors: z.array(Color).max(24).optional().describe("Per series (per slice for pie/donut), in order. Omit for the default palette."),
+    size: z.enum(["small", "medium", "large"]).optional().describe("Default 'medium'."),
+    placement: Placement.optional(),
+  })
+  .refine((v) => v.series.every((s) => s.values.length === v.labels.length), { message: "Each series needs one value per label." })
+  .refine((v) => !["pie", "donut"].includes(v.kind) || v.series.length === 1, { message: "A pie/donut chart takes one series." })
+  .refine((v) => !["pie", "donut"].includes(v.kind) || (v.series[0].values.every((x) => x >= 0) && v.series[0].values.some((x) => x > 0)), {
+    message: "Pie/donut values must be zero or more, and not all zero.",
+  });
+
 export const MoveElement = z.object({
   target: ElementId,
   direction: Direction.optional().describe("Nudge in a direction."),
@@ -214,6 +282,8 @@ export const ACTION_SCHEMAS = {
   add_arrow: AddArrow,
   generate_diagram: GenerateDiagram,
   add_dimension: AddDimension,
+  plot_graph: PlotGraph,
+  add_chart: AddChart,
   move_element: MoveElement,
   animate_element: AnimateElement,
   update_element: UpdateElement,
@@ -236,6 +306,10 @@ export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
     "Draw a whole diagram at once (flowchart, architecture, pipeline, org chart, mind map, process steps): boxes plus the arrows between them, laid out automatically.",
   add_dimension:
     "Draw a measurement line with a label like '10 ft': along one element's height/width (target), or across the gap between two elements (from + to).",
+  plot_graph:
+    "Plot a graph of one or more equations y = f(x) (e.g. 'y = x^2', 'sin(x)') on labelled axes; hovering it shows the coordinates. Or add curves to an existing graph (add_to).",
+  add_chart:
+    "Draw a data chart from numbers: column, bar, line, area, pie or donut, with labels and one or more series; hovering it shows the values.",
   move_element: "Move an existing element: nudge it in a direction or place it next to something / in a region.",
   animate_element:
     "Animate an existing element moving (walk, run, drive, fly) towards or away from another element, in a direction, or to a place. Use instead of move_element when the user describes motion ('moves towards', 'walks to', 'runs away from').",

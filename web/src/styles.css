@@ -799,3 +799,75 @@ kbd {
     animation: none;
   }
 }
+
+/* Graph/chart hover readout (PlotHover): passive layer over the canvas. */
+.plot-hover {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.plot-hover-marks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.plot-hover-guide {
+  stroke: #868e96;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.plot-hover-dot {
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+.plot-hover-shape {
+  fill: rgba(255, 255, 255, 0.22);
+  stroke: #1e1e1e;
+  stroke-width: 2;
+}
+.plot-tip {
+  position: absolute;
+  min-width: 96px;
+  max-width: 280px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font: 12px/1.45 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.plot-tip-heading {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.plot-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.plot-tip-row.is-strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.plot-tip-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.plot-tip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plot-tip-value {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--text);
+}

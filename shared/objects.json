@@ -168,7 +168,7 @@
   "flag": { "icon": "triangular-flag", "aliases": ["milestone"] },
   "map": { "icon": "world-map", "aliases": ["world map"] },
   "compass": { "icon": "compass", "aliases": [] },
-  "chart": { "icon": "chart-increasing", "aliases": ["graph", "growth", "chart increasing"] },
+  "chart": { "icon": "chart-increasing", "aliases": ["growth", "chart increasing"] },
   "bar chart": { "icon": "bar-chart", "aliases": ["stats", "analytics"] },
   "link": { "icon": "link", "aliases": ["chain"] },
 

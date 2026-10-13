@@ -68,6 +68,8 @@ describe("tool definitions", () => {
       "add_arrow",
       "generate_diagram",
       "add_dimension",
+      "plot_graph",
+      "add_chart",
       "move_element",
       "animate_element",
       "update_element",
@@ -113,6 +115,18 @@ describe("blockToEvents", () => {
     expect(blockToEvents(toolUse("scroll_view", { fit: "all" }), 0)[0].type).toBe("action");
     expect(blockToEvents(toolUse("scroll_view", { direction: "down", edge: "top" }), 0)[0].type).toBe("invalid");
     expect(blockToEvents(toolUse("scroll_view", {}), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("plot_graph", { equations: ["y = x^2", "sin(2x)"], x_min: -5, x_max: 5 }), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("plot_graph", { equations: ["x^2 + y^2 = 1"] }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("plot_graph", { equations: ["y = foo(x)"] }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("plot_graph", { equations: ["x"], x_min: 3, x_max: 1 }), 0)[0].type).toBe("invalid");
+    const pie = { kind: "pie", labels: ["Rent", "Food"], series: [{ values: [40, 60] }] };
+    expect(blockToEvents(toolUse("add_chart", pie), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("add_chart", { ...pie, series: [{ values: [40] }] }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("add_chart", { ...pie, series: [{ values: [40, -1] }] }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("add_chart", { ...pie, series: [{ values: [1, 2] }, { values: [3, 4] }] }), 0)[0].type).toBe("invalid");
+    expect(
+      blockToEvents(toolUse("add_chart", { ...pie, kind: "column", series: [{ values: [1, 2] }, { values: [3, -4] }] }), 0)[0].type,
+    ).toBe("action");
   });
   it("accepts generate_diagram with unique node ids only", () => {
     const nodes = [

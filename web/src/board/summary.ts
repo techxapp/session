@@ -20,7 +20,11 @@ export function summarize(elements: readonly ExcalidrawElement[], selectedIds: s
     const kind = (e.customData?.kind as string | undefined) ?? e.type;
     const item: SceneElementSummary = {
       id: e.id,
-      type: (kind === "sticky" ? "sticky" : KNOWN.has(e.type) ? e.type : "other") as SceneElementSummary["type"],
+      type: (kind === "sticky" || kind === "graph" || kind === "chart"
+        ? kind
+        : KNOWN.has(e.type)
+          ? e.type
+          : "other") as SceneElementSummary["type"],
       x: Math.round(e.x),
       y: Math.round(e.y),
       w: Math.round(e.width),

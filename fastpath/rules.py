@@ -512,6 +512,18 @@ def has_diagram(cmd: Command) -> bool:
     return bool(DIAGRAM_WORDS & set(cmd.w)) or any(p in text for p in DIAGRAM_PHRASES)
 
 
+PLOT_WORDS = {
+    "graph", "graphs", "plot", "plots", "plotted", "plotting", "equation", "equations", "parabola", "chart", "charts",
+    "histogram", "sine", "cosine",
+}
+EQUATION = re.compile(r"\b(y|f\s*\(\s*x\s*\))\s*=|=\s*y\b|\bx\s*(\^|\*\*)", re.I)
+
+
+def has_plot(cmd: Command) -> bool:
+    """An equation graph or data chart. Laya has no plot_graph/add_chart and would draw a box or text."""
+    return bool(PLOT_WORDS & set(cmd.w)) or bool(EQUATION.search(cmd.text))
+
+
 TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, scroll, move, animate]
 
 
@@ -526,6 +538,8 @@ def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] |
         measured = measure_command(text, scene)
         return ("fast", *measured) if measured else ("llm", None, "measurement needs the LLM")
     obj = object_command(text)
+    if obj and has_plot(Command(text)):  # "add a bar chart": a real chart now, not the clip-art icon
+        return "llm", None, "graph needs the LLM"
     if obj:
         return route_object(obj, None, 1.0) if not obj["casual"] else None
     cmd = Command(text)
@@ -539,6 +553,8 @@ def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] |
         return "llm", None, "motion needs the LLM"
     if has_scroll(cmd):  # Laya has no scroll_view either
         return "llm", None, "scroll needs the LLM"
-    if has_diagram(cmd):  # nor generate_diagram
+    if has_diagram(cmd):  # nor generate_diagram ("org chart" lands here, not below)
         return "llm", None, "diagram needs the LLM"
+    if has_plot(cmd):  # nor plot_graph / add_chart
+        return "llm", None, "graph needs the LLM"
     return None
