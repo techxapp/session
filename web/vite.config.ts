@@ -9,7 +9,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: { "/api": "http://localhost:8787" },
+    proxy: {
+      "/api": "http://localhost:8787",
+      // Speech-to-text sidecar (stt/server.py); 127.0.0.1 because it binds IPv4 only.
+      "/stt": { target: "ws://127.0.0.1:8789", ws: true },
+    },
   },
   test: {
     environment: "jsdom",

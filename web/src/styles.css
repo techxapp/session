@@ -462,6 +462,42 @@ kbd {
   background: var(--text);
   color: var(--surface-solid);
 }
+.mic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.mic:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+.mic:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.mic.is-on {
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+  color: var(--bad);
+}
+.mic.is-on svg {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.bar.is-listening {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+}
+.bar.has-error input::placeholder {
+  color: var(--bad);
+}
 
 .suggestions {
   display: flex;
@@ -753,6 +789,7 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .spin,
   .bar.is-running .bar-icon,
+  .mic.is-on svg,
   .activity-panel,
   .row {
     animation: none;

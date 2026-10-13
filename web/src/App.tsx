@@ -11,6 +11,7 @@ import { ActivityPanel } from "./components/ActivityPanel";
 import { CommandDock } from "./components/CommandDock";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPill, type ServerStatus } from "./components/StatusPill";
+import { boardKeyterms, useVoice } from "./voice/useVoice";
 import {
   activeChoice,
   activeProfile,
@@ -54,6 +55,16 @@ export default function App() {
   latest.current = { settings, health };
   const getConfig = useCallback(() => requestConfig(latest.current.settings, latest.current.health ?? null), []);
   const runner = useCommandRunner(api, getConfig);
+
+  // Spoken commands run in order: a new line waits for the command in flight instead of cancelling it (typing still barges in).
+  const runRef = useRef(runner.run);
+  runRef.current = runner.run;
+  const spoken = useRef<Promise<unknown>>(Promise.resolve());
+  const onSpoken = useCallback((text: string) => {
+    spoken.current = spoken.current.then(() => runRef.current(text)).catch(() => undefined);
+  }, []);
+  const getKeyterms = useCallback(() => (api ? boardKeyterms(api.getSceneElements()) : []), [api]);
+  const voice = useVoice(onSpoken, getKeyterms);
 
   const status: ServerStatus = useMemo(() => {
     if (health === undefined) return { state: "checking" };
@@ -175,7 +186,7 @@ export default function App() {
           <div className="empty-mark">✦</div>
           <h1>Describe it. Watch it appear.</h1>
           <p>
-            Type a command below — boxes, arrows, notes, whole diagrams. Press <kbd>/</kbd> anytime to focus.
+            Type or say a command below — boxes, arrows, notes, whole diagrams. Press <kbd>/</kbd> anytime to focus.
           </p>
         </div>
       )}
@@ -190,6 +201,7 @@ export default function App() {
         disabled={status.state === "offline"}
         onSubmit={(t) => void runner.run(t)}
         onCancel={runner.cancel}
+        voice={voice}
       />
     </div>
   );
