@@ -72,7 +72,7 @@ export function withFastPath(provider: Provider, fast: FastPath, onError?: (err:
         : decision.route === "fast"
           ? "local actions failed validation"
           : `local model passed: ${decision.reason ?? "not a simple command"}`;
-      emit({ type: "route", source: "cloud", model: provider.model, detail: `Sent to the cloud (${why})`, ms });
+      emit({ type: "route", source: "cloud", model: provider.model, detail: `Sent to the cloud (${why})`, ms, objects: provider.objects });
       return provider.run(req, emit, signal);
     },
   };

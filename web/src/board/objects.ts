@@ -1,6 +1,5 @@
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFileData, DataURL, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { ObjectName } from "@board/shared";
 
 /**
  * Clip-art for `add_object`. Each object is an image element whose fileId is fixed per object, so every
@@ -13,12 +12,12 @@ const FILE_PREFIX = "object:";
 /** Raster size of loaded clip-art. PNG, not SVG: Excalidraw colour-inverts SVG images in dark mode. */
 const RASTER_PX = 512;
 
-export const objectFileId = (name: ObjectName) => `${FILE_PREFIX}${name}` as FileId;
+export const objectFileId = (name: string) => `${FILE_PREFIX}${name}` as FileId;
 const objectUrl = (name: string) => `${import.meta.env.BASE_URL}objects/${name.replace(/ /g, "-")}.svg`;
 
 /** The object an element draws, if it is one of ours. */
-export function objectOf(el: ExcalidrawElement): ObjectName | undefined {
-  return el.type === "image" && el.customData?.kind === "object" ? (el.customData.object as ObjectName) : undefined;
+export function objectOf(el: ExcalidrawElement): string | undefined {
+  return el.type === "image" && el.customData?.kind === "object" ? (el.customData.object as string) : undefined;
 }
 
 async function rasterize(svg: string): Promise<DataURL> {

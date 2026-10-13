@@ -1,0 +1,58 @@
+{"id": 301, "scene": "arch", "text": "undo the last change", "cat": "undo", "rules": [{"name": "undo_last_command", "input": {}}]}
+{"id": 302, "scene": "flow", "text": "scratch that", "cat": "undo", "rules": [{"name": "undo_last_command", "input": {}}]}
+{"id": 303, "scene": "notes", "text": "clear the whole canvas", "cat": "clear", "rules": [{"name": "clear_board", "input": {"confirm": true}}]}
+{"id": 304, "scene": "arch", "text": "remove the API gateway", "cat": "delete", "rules": [{"name": "delete_elements", "input": {"targets": ["api"]}}]}
+{"id": 305, "scene": "flow", "text": "get rid of the valid diamond", "cat": "delete", "rules": [{"name": "delete_elements", "input": {"targets": ["check"]}}]}
+{"id": 306, "scene": "arch_sel", "text": "delete that one", "cat": "delete", "rules": [{"name": "delete_elements", "input": {"targets": ["cache"]}}]}
+{"id": 307, "scene": "notes", "text": "delete the title", "cat": "delete", "rules": [{"name": "delete_elements", "input": {"targets": ["title"]}}]}
+{"id": 308, "scene": "arch", "text": "paint the user box blue", "cat": "recolor", "rules": [{"name": "update_element", "input": {"target": "user", "color": "blue"}}]}
+{"id": 309, "scene": "flow", "text": "make the start circle teal", "cat": "recolor", "rules": [{"name": "update_element", "input": {"target": "start", "color": "teal"}}]}
+{"id": 310, "scene": "notes", "text": "change the color of the title to orange", "cat": "recolor", "rules": [{"name": "update_element", "input": {"target": "title", "color": "orange"}}]}
+{"id": 311, "scene": "arch_sel", "text": "turn it red, no wait, green", "cat": "recolor", "rules": [{"name": "update_element", "input": {"target": "cache", "color": "green"}}]}
+{"id": 312, "scene": "arch", "text": "make postgres medium", "cat": "resize", "rules": [{"name": "update_element", "input": {"target": "db", "size": "medium"}}]}
+{"id": 313, "scene": "flow", "text": "make the show error box large", "cat": "resize", "rules": [{"name": "update_element", "input": {"target": "err", "size": "large"}}]}
+{"id": 314, "scene": "arch_sel", "text": "shift it to the right a little", "cat": "move", "rules": [{"name": "move_element", "input": {"target": "cache", "direction": "right", "distance": "little"}}]}
+{"id": 315, "scene": "flow", "text": "move the start circle down", "cat": "move", "rules": [{"name": "move_element", "input": {"target": "start", "direction": "down"}}]}
+{"id": 316, "scene": "notes", "text": "push the ship v2 note up slightly", "cat": "move", "rules": [{"name": "move_element", "input": {"target": "s2", "direction": "up", "distance": "little"}}]}
+{"id": 317, "scene": "empty", "text": "create a large orange rectangle", "cat": "add_shape", "rules": [{"name": "add_shape", "input": {"kind": "rectangle", "color": "orange", "size": "large"}}]}
+{"id": 318, "scene": "empty", "text": "add a small purple circle in the top right corner", "cat": "add_shape", "rules": [{"name": "add_shape", "input": {"kind": "ellipse", "color": "purple", "size": "small", "placement": {"region": "top-right"}}}]}
+{"id": 319, "scene": "notes", "text": "add a pink sticky note saying call the bank", "cat": "labelled_shape", "rules": [{"name": "add_shape", "input": {"kind": "sticky", "color": "pink", "label": "call the bank"}}]}
+{"id": 320, "scene": "empty", "text": "draw a diamond labelled approved", "cat": "labelled_shape", "rules": [{"name": "add_shape", "input": {"kind": "diamond", "label": "approved"}}]}
+{"id": 321, "scene": "arch", "text": "add a box called auth service", "cat": "labelled_shape", "rules": [{"name": "add_shape", "input": {"kind": "rectangle", "label": "auth service"}}]}
+{"id": 322, "scene": "empty", "text": "add a title that says quarterly plan", "cat": "text", "rules": [{"name": "add_text", "input": {"text": "quarterly plan", "style": "title"}}]}
+{"id": 323, "scene": "notes", "text": "write a caption saying updated friday", "cat": "text", "rules": [{"name": "add_text", "input": {"text": "updated friday", "style": "caption"}}]}
+{"id": 324, "scene": "arch", "text": "rename the cache to redis", "cat": "rename", "rules": [{"name": "update_element", "input": {"target": "cache", "label": "redis"}}]}
+{"id": 325, "scene": "notes", "text": "rename the buy milk note to buy bread", "cat": "rename", "rules": [{"name": "update_element", "input": {"target": "s1", "label": "buy bread"}}]}
+{"id": 326, "scene": "notes", "text": "change the title to retro notes", "cat": "rename", "rules": [{"name": "update_element", "input": {"target": "title", "label": "retro notes"}}]}
+{"id": 327, "scene": "arch", "text": "connect the API to the cache", "cat": "arrow", "rules": [{"name": "add_arrow", "input": {"from": "api", "to": "cache"}}]}
+{"id": 328, "scene": "flow", "text": "draw an arrow from show error to start", "cat": "arrow", "rules": [{"name": "add_arrow", "input": {"from": "err", "to": "start"}}]}
+{"id": 329, "scene": "arch", "text": "link user with postgres", "cat": "arrow", "rules": [{"name": "add_arrow", "input": {"from": "user", "to": "db"}}]}
+{"id": 330, "scene": "arch", "text": "draw a dashed arrow from the cache to postgres", "cat": "arrow", "rules": [{"name": "add_arrow", "input": {"from": "cache", "to": "db", "style": "dashed"}}]}
+{"id": 331, "scene": "arch_sel", "text": "connect it to the api", "cat": "arrow", "rules": [{"name": "add_arrow", "input": {"from": "cache", "to": "api"}}]}
+{"id": 332, "scene": "notes", "text": "make all the stickies orange", "cat": "set", "rules": [{"name": "update_element", "input": {"target": "s1", "color": "orange"}}, {"name": "update_element", "input": {"target": "s2", "color": "orange"}}, {"name": "update_element", "input": {"target": "s3", "color": "orange"}}]}
+{"id": 333, "scene": "flow", "text": "move both boxes up a bit", "cat": "set", "rules": [{"name": "move_element", "input": {"target": "err", "direction": "up", "distance": "little"}}, {"name": "move_element", "input": {"target": "save", "direction": "up", "distance": "little"}}]}
+{"id": 334, "scene": "notes", "text": "make the yellow notes green", "cat": "set", "rules": [{"name": "update_element", "input": {"target": "s1", "color": "green"}}, {"name": "update_element", "input": {"target": "s2", "color": "green"}}]}
+{"id": 335, "scene": "arch", "text": "delete every circle", "cat": "set", "rules": [{"name": "delete_elements", "input": {"targets": ["db"]}}]}
+{"id": 336, "scene": "notes", "text": "please make the title red", "cat": "noisy", "rules": [{"name": "update_element", "input": {"target": "title", "color": "red"}}]}
+{"id": 337, "scene": "arch", "text": "um can you delete the, the cache", "cat": "noisy", "rules": [{"name": "delete_elements", "input": {"targets": ["cache"]}}]}
+{"id": 338, "scene": "arch_sel", "text": "draw a tree", "cat": "object", "rules": [{"name": "add_object", "input": {"object": "tree"}}]}
+{"id": 339, "scene": "arch", "text": "change the cache to a circle", "cat": "fallthrough", "rules": null}
+{"id": 340, "scene": "arch_sel", "text": "make it bigger", "cat": "fallthrough", "rules": null}
+{"id": 341, "scene": "empty", "text": "add a box called payments and connect it to the api", "cat": "fallthrough", "rules": null}
+{"id": 342, "scene": "arch", "text": "I'll delete that later", "cat": "fallthrough", "rules": null}
+{"id": 343, "scene": "arch_sel", "text": "move it next to the database", "cat": "fallthrough", "rules": null}
+{"id": 344, "scene": "arch", "text": "delete the database", "cat": "fallthrough", "rules": null}
+{"id": 345, "scene": "arch", "text": "connect the user to the database", "cat": "fallthrough", "rules": null}
+{"id": 346, "scene": "arch", "text": "what if we made the api red", "cat": "fallthrough", "rules": null}
+{"id": 347, "scene": "notes", "text": "rename all the notes to done", "cat": "fallthrough", "rules": null}
+{"id": 348, "scene": "empty", "text": "add three boxes", "cat": "fallthrough", "rules": null}
+{"id": 349, "scene": "arch", "text": "move the cache to the left of the api", "cat": "fallthrough", "rules": null}
+{"id": 350, "scene": "arch", "text": "make the api red and the cache blue", "cat": "fallthrough", "rules": null}
+{"id": 351, "scene": "notes", "text": "add a sticky note saying call mom on the right", "cat": "fallthrough", "rules": null}
+{"id": 352, "scene": "arch", "text": "delete the box", "cat": "fallthrough", "rules": null}
+{"id": 353, "scene": "arch", "text": "make the api gateway look nicer", "cat": "fallthrough", "rules": null}
+{"id": 354, "scene": "flow", "text": "undo that and delete the error box", "cat": "fallthrough", "rules": null}
+{"id": 355, "scene": "arch", "text": "the cache is red", "cat": "fallthrough", "rules": null}
+{"id": 356, "scene": "notes", "text": "write that down", "cat": "fallthrough", "rules": null}
+{"id": 357, "scene": "arch", "text": "make the tree green", "cat": "fallthrough", "rules": null}
+{"id": 358, "scene": "arch", "text": "delete the cache next to the api", "cat": "fallthrough", "rules": null}

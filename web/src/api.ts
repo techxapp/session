@@ -1,12 +1,25 @@
-import type { CommandEvent, CommandRequest } from "@board/shared";
+import type { CommandEvent, CommandRequest, HealthInfo, ModelConfig } from "@board/shared";
 
-export async function checkHealth(): Promise<{ ok: boolean; model: string; hasKey: boolean; fastPath?: boolean } | null> {
+export async function checkHealth(): Promise<HealthInfo | null> {
   try {
     const res = await fetch("/api/health");
     return res.ok ? await res.json() : null;
   } catch {
     return null;
   }
+}
+
+/** The endpoint's model ids (through the server, which holds or forwards the key). Throws with the server's message. */
+export async function fetchModels(config: ModelConfig, signal?: AbortSignal): Promise<string[]> {
+  const res = await fetch("/api/models", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ config }),
+    signal,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `Server error (${res.status})`);
+  return body.models ?? [];
 }
 
 /** POST a command and yield server-sent events as they arrive. */

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import objects from "../objects.json";
+import moreObjects from "../objects-more.json";
 
 /**
  * Board actions are the typed "System 1" decisions: every voice/text command
@@ -50,15 +51,46 @@ export const AddShape = z.object({
   placement: Placement.optional(),
 });
 
-/** Clip-art the board can draw (shared/objects.json; images in web/public/objects, made by web/scripts/build-objects.mjs). */
+/**
+ * Clip-art the board can draw (images in web/public/objects, made by web/scripts/build-objects.mjs):
+ * the hand-curated catalog (shared/objects.json, the OBJECT_MODE=enum list) plus the rest of the icon
+ * library (shared/objects-more.json, generated, named after the icon), which OBJECT_MODE=text can also reach.
+ */
 export type ObjectName = keyof typeof objects;
 export const OBJECT_NAMES = Object.keys(objects) as [ObjectName, ...ObjectName[]];
+export const OBJECT_CATALOG: Record<ObjectName, { icon: string; aliases: string[] }> = objects;
+export const MORE_OBJECT_NAMES: readonly string[] = moreObjects;
+export const ALL_OBJECT_NAMES = [...OBJECT_NAMES, ...MORE_OBJECT_NAMES] as [string, ...string[]];
 
-export const AddObject = z.object({
+const ObjectFields = {
   id: NewId.optional(),
-  object: z.enum(OBJECT_NAMES).describe("Which picture. Pick the closest one, e.g. 'kid' -> 'child', 'oak' -> 'tree'."),
   size: z.enum(["small", "medium", "large"]).optional(),
   placement: Placement.optional(),
+};
+
+/** The add_object tool in OBJECT_MODE=enum: the model picks one curated name. */
+export const AddObject = z.object({
+  id: ObjectFields.id,
+  object: z.enum(OBJECT_NAMES).describe("Which picture. Pick the closest one, e.g. 'kid' -> 'child', 'oak' -> 'tree'."),
+  size: ObjectFields.size,
+  placement: ObjectFields.placement,
+});
+
+/** What add_object validates as (ACTION_SCHEMAS): any curated or library name. */
+export const AddObjectAny = z.object({ ...ObjectFields, object: z.enum(ALL_OBJECT_NAMES) });
+
+/**
+ * add_object with a free-text `object` (OBJECT_MODE=text): the catalog stays out of the prompt and the
+ * server maps the word to a catalog or library name (server/src/objects.ts) before it is validated.
+ */
+export const AddObjectText = AddObject.extend({
+  object: z
+    .string()
+    .min(1)
+    .max(60)
+    .describe(
+      "The thing to draw as a plain common noun, e.g. 'dog', 'tree', 'laptop', 'old woman'. If no picture fits, a labelled box is drawn.",
+    ),
 });
 
 export const AddText = z.object({
@@ -79,12 +111,41 @@ export const AddArrow = z.object({
   bidirectional: z.boolean().optional(),
 });
 
+export const AddDimension = z
+  .object({
+    id: NewId.optional(),
+    label: z.string().min(1).max(100).describe("The measurement as the user said it, e.g. '10 ft'."),
+    target: ElementId.optional().describe("Measure this element: a vertical line along its height (or its width)."),
+    axis: z.enum(["height", "width"]).optional().describe("With target. Default 'height'."),
+    from: ElementId.optional().describe("With 'to': measure the gap between these two elements."),
+    to: ElementId.optional(),
+    color: Color.optional(),
+  })
+  .refine((v) => (v.target !== undefined) !== (v.from !== undefined && v.to !== undefined), {
+    message: "Give either target, or both from and to.",
+  });
+
 export const MoveElement = z.object({
   target: ElementId,
   direction: Direction.optional().describe("Nudge in a direction."),
   distance: z.enum(["little", "some", "far"]).optional().describe("How far to nudge. Default 'some'."),
   placement: Placement.optional().describe("Or move to a placement (next to another element, region, or x/y)."),
 });
+
+export const AnimateElement = z
+  .object({
+    target: ElementId,
+    toward: ElementId.optional().describe("Move until next to this element (stops beside it, on the side facing the mover)."),
+    away_from: ElementId.optional().describe("Move straight away from this element."),
+    direction: Direction.optional().describe("Or move in a direction."),
+    distance: z.enum(["little", "some", "far"]).optional().describe("With direction or away_from. Default 'some'."),
+    placement: Placement.optional().describe("Or move to a place (region, next to something, or x/y)."),
+    speed: z.enum(["slow", "normal", "fast"]).optional().describe("walk/move/go = normal, run/drive/fly/rush = fast, stroll/creep = slow."),
+    style: z.enum(["walk", "slide"]).optional().describe("'walk' bobs as it goes. Default 'walk' for pictures, 'slide' for shapes/text."),
+  })
+  .refine((v) => [v.toward, v.away_from, v.direction, v.placement].filter((x) => x !== undefined).length === 1, {
+    message: "Give exactly one of toward, away_from, direction or placement.",
+  });
 
 export const UpdateElement = z.object({
   target: ElementId,
@@ -106,10 +167,12 @@ export const ClearBoard = z.object({
 
 export const ACTION_SCHEMAS = {
   add_shape: AddShape,
-  add_object: AddObject,
+  add_object: AddObjectAny,
   add_text: AddText,
   add_arrow: AddArrow,
+  add_dimension: AddDimension,
   move_element: MoveElement,
+  animate_element: AnimateElement,
   update_element: UpdateElement,
   delete_elements: DeleteElements,
   undo_last_command: UndoLastCommand,
@@ -125,7 +188,11 @@ export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
     "Draw a picture of a real-world thing: a person, animal, plant, weather, food, building, vehicle or everyday object. Not for diagram boxes.",
   add_text: "Write free-standing text on the board (titles, notes, bullet lists).",
   add_arrow: "Connect two elements with an arrow, optionally labelled.",
+  add_dimension:
+    "Draw a measurement line with a label like '10 ft': along one element's height/width (target), or across the gap between two elements (from + to).",
   move_element: "Move an existing element: nudge it in a direction or place it next to something / in a region.",
+  animate_element:
+    "Animate an existing element moving (walk, run, drive, fly) towards or away from another element, in a direction, or to a place. Use instead of move_element when the user describes motion ('moves towards', 'walks to', 'runs away from').",
   update_element: "Change an existing element's text, color or size.",
   delete_elements: "Remove elements (connected arrows are removed too).",
   undo_last_command: "Undo everything the previous command did.",

@@ -1,7 +1,20 @@
 import Fastify from "fastify";
 import { z } from "zod";
-import type { CommandEvent, CommandRequest } from "@board/shared";
+import type { CommandEvent, CommandRequest, HealthInfo, ModelConfig } from "@board/shared";
+import { DEFAULT_EFFORT, type ReasoningEffort } from "./effort";
 import type { Provider } from "./provider";
+
+/** Model settings from the browser; see ModelConfig. Empty strings mean "not set". */
+const Config = z
+  .object({
+    provider: z.enum(["anthropic", "openai"]).optional(),
+    baseUrl: z.union([z.literal(""), z.url({ protocol: /^https?$/ }).max(300)]).optional(),
+    apiKey: z.string().trim().max(500).optional(),
+    model: z.string().trim().max(200).optional(),
+    effort: z.enum(["off", "low", "medium", "high"]).optional(),
+    objectMode: z.enum(["enum", "text"]).optional(),
+  })
+  .optional();
 
 const CommandBody = z.object({
   text: z.string().trim().min(1).max(2000),
@@ -11,22 +24,58 @@ const CommandBody = z.object({
     recentIds: z.array(z.string()).max(50),
     viewport: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }),
   }),
+  config: Config,
 });
 
-export function buildApp(provider: Provider, opts: { logger?: boolean } = {}) {
+export interface AppOptions {
+  logger?: boolean;
+  /** The provider for a request that carries a config from the UI. Without it, configs are ignored. */
+  forConfig?: (config: ModelConfig) => Provider;
+  /** Model ids an endpoint offers, for the Settings model picker (POST /api/models). */
+  listModels?: (config: ModelConfig) => Promise<string[]>;
+  /** .env facts for /api/health that the default provider doesn't carry. */
+  info?: { baseUrl: string; keyedEndpoints: string[]; effort: ReasoningEffort };
+}
+
+export function buildApp(provider: Provider, opts: AppOptions = {}) {
   const app = Fastify({ logger: opts.logger === false ? false : { level: process.env.LOG_LEVEL || "info" } });
 
-  app.get("/api/health", async () => ({
+  app.get("/api/health", async (): Promise<HealthInfo> => ({
     ok: true,
     model: provider.model,
     provider: provider.name,
+    baseUrl: opts.info?.baseUrl ?? "",
     hasKey: provider.hasKey,
+    keyedEndpoints: opts.info?.keyedEndpoints ?? [],
+    effort: opts.info?.effort ?? DEFAULT_EFFORT,
+    objectMode: provider.objects,
     fastPath: Boolean(provider.fastPath),
   }));
+
+  app.post("/api/models", async (request, reply) => {
+    const body = z.object({ config: Config }).safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: z.prettifyError(body.error) });
+    if (!opts.listModels) return reply.code(404).send({ error: "Model listing is not available." });
+    try {
+      return { models: await opts.listModels(body.data.config ?? {}) };
+    } catch (err) {
+      request.log.warn({ err: err instanceof Error ? err.message : err }, "listing models failed");
+      return reply.code(502).send({ error: err instanceof Error ? err.message : "Couldn't list models." });
+    }
+  });
 
   app.post("/api/command", async (request, reply) => {
     const body = CommandBody.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: z.prettifyError(body.error) });
+
+    let runner = provider;
+    if (body.data.config && opts.forConfig) {
+      try {
+        runner = opts.forConfig(body.data.config);
+      } catch (err) {
+        return reply.code(400).send({ error: err instanceof Error ? err.message : "Invalid model settings." });
+      }
+    }
 
     reply.hijack();
     const res = reply.raw;
@@ -43,12 +92,14 @@ export function buildApp(provider: Provider, opts: { logger?: boolean } = {}) {
 
     try {
       // With a fast path, the wrapper says which side decided; otherwise it is always the cloud model.
-      if (!provider.fastPath) emit({ type: "route", source: "cloud", model: provider.model, detail: "Cloud model", ms: 0 });
-      await provider.run(body.data as CommandRequest, emit, abort.signal);
+      if (!runner.fastPath)
+        emit({ type: "route", source: "cloud", model: runner.model, detail: "Cloud model", ms: 0, objects: runner.objects });
+      const { config: _config, ...req } = body.data;
+      await runner.run(req as CommandRequest, emit, abort.signal);
     } catch (err) {
       if (!abort.signal.aborted) {
         request.log.error(err);
-        emit({ type: "error", message: provider.describeError(err) ?? "Something went wrong running the command." });
+        emit({ type: "error", message: runner.describeError(err) ?? "Something went wrong running the command." });
       }
     } finally {
       res.end();
