@@ -1,5 +1,5 @@
 import type { SceneSummary } from "@board/shared";
-import { TOOL_GROUPS, type ToolGroup } from "./toolRouter";
+import { EXTRA_GROUPS, TOOL_GROUPS, type ExtraGroup, type ToolGroup } from "./toolRouter";
 
 /**
  * The system prompt is assembled per tool-group set (toolRouter.ts): the core instructions plus only the bullets
@@ -16,8 +16,8 @@ How to act:
 
 const LABELS_LINE = `- Labels should be short, the way someone writes on a whiteboard. Keep the user's wording.`;
 
-/** Guidance for each tool group, sent only with that group's tools. */
-export const GROUP_PROMPT: Record<ToolGroup, string> = {
+/** Guidance for each extra tool group, sent only with that group's tools (the core groups need none). */
+export const GROUP_PROMPT: Record<ExtraGroup, string> = {
   diagram: `- For a diagram of three or more connected boxes (a flowchart, architecture, pipeline, org chart, the steps of a process), make ONE generate_diagram call with every node and edge; the layout is computed for you. Invent sensible steps when the user only names the topic ("draw a login flowchart"). Decisions are diamonds with "yes"/"no" edge labels, start/end are ellipses. Use direction "right" for pipelines and timelines.
 - To extend a diagram already on the board, use add_shape + add_arrow (or generate_diagram with edges to the existing ids for a whole new branch). One or two boxes are add_shape.`,
   object: `- To draw a real-world thing (a man, a child, a tree, a flower, a car, a dog...), use add_object with the closest object name, even when phrased casually ("let's grab a tree", "put a kid here"). Use add_shape for diagram boxes and for things no object fits. To name a picture, add caption text below it.`,
@@ -54,7 +54,7 @@ export function promptFor(groups: readonly ToolGroup[]): string {
     const parts = [PROMPT_HEAD];
     if (groups.includes("diagram")) parts.push(GROUP_PROMPT.diagram);
     parts.push(LABELS_LINE);
-    for (const g of TOOL_GROUPS) if (g !== "diagram" && groups.includes(g)) parts.push(GROUP_PROMPT[g]);
+    for (const g of EXTRA_GROUPS) if (g !== "diagram" && groups.includes(g)) parts.push(GROUP_PROMPT[g]);
     if (groups.length < TOOL_GROUPS.length) parts.push(SUBSET_NOTE);
     prompt = parts.join("\n") + "\n" + PROMPT_TAIL;
     prompts.set(key, prompt);

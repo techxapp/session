@@ -15,9 +15,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 import torch
 from laya import train
+from laya_eval import QUESTIONS_FILE, QUESTIONS_VERSION
 
 
 def main() -> None:
@@ -33,6 +36,8 @@ def main() -> None:
     ap.add_argument("--loss", default="rlcd", choices=train.LOSSES)
     ap.add_argument("--no-checkpointing", action="store_true", help="keep activations instead of recomputing them: faster, more memory")
     ap.add_argument("--shuffle-options", action="store_true", help="random option order for choice questions each epoch")
+    ap.add_argument("--encoder-lr", type=float, default=2.5e-5, help="lower it when --base is already fine-tuned")
+    ap.add_argument("--head-lr", type=float, default=1e-4)
     args = ap.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -59,12 +64,16 @@ def main() -> None:
         micro_batch=args.micro_batch,
         grad_accum=args.grad_accum,
         loss=args.loss,
+        encoder_lr=args.encoder_lr,
+        head_lr=args.head_lr,
         freeze_encoder=args.freeze_encoder,
         shuffle_options=("choice",) if args.shuffle_options else (),
         log_every=200,
         gradient_checkpointing=False if args.no_checkpointing else None,
     )
     summary = train.finetune(args.data, args.base, args.out, config, device=str(device))
+    # The sidecar only loads a checkpoint trained on the questions decide.py asks now (make_train.py uses them).
+    Path(args.out, QUESTIONS_FILE).write_text(json.dumps({"questions": QUESTIONS_VERSION, "data": args.data, "base": args.base}))
     print({k: v for k, v in summary.items() if not isinstance(v, (list, dict))})
 
 

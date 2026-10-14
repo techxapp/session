@@ -3,7 +3,7 @@ import type { SceneSummary } from "@board/shared";
 import { GROUP_PROMPT, SYSTEM_PROMPT, buildUserMessage, promptFor } from "./prompt";
 import { TOOLS_BY_MODE, toolsFor } from "./system1";
 import { openaiToolsFor } from "./system1-openai";
-import { TOOL_GROUPS, groupsFor, groupsLabel, selectGroups, type ToolGroup } from "./toolRouter";
+import { CORE_GROUPS, EXTRA_GROUPS, TOOL_GROUPS, groupsFor, groupsLabel, selectGroups, type ExtraGroup } from "./toolRouter";
 
 const empty: SceneSummary = { elements: [], selectedIds: [], recentIds: [], viewport: { x: 0, y: 0, width: 1200, height: 800 } };
 const withChart: SceneSummary = {
@@ -23,7 +23,7 @@ const withChart: SceneSummary = {
   ],
 };
 
-const CASES: [string, ToolGroup[], SceneSummary?][] = [
+const CASES: [string, ExtraGroup[], SceneSummary?][] = [
   // core only
   ["add a red box next to the api", []],
   ["connect api to db", []],
@@ -76,16 +76,45 @@ describe("selectGroups", () => {
 
   it("gives every group in all mode", () => {
     expect(groupsFor("all", "add a box", empty)).toBe(TOOL_GROUPS);
+    expect(groupsFor("all", "add a box", empty, { core: ["edit"] })).toBe(TOOL_GROUPS);
     expect(groupsLabel(TOOL_GROUPS)).toEqual(["all"]);
-    expect(groupsLabel(["chart"])).toEqual(["core", "chart"]);
+    expect(groupsLabel([...CORE_GROUPS, "chart"])).toEqual(["core", "chart"]);
+    expect(groupsLabel(["edit", "scroll"])).toEqual(["edit", "scroll"]);
+    expect(groupsLabel([])).toEqual(["base"]);
+  });
+});
+
+describe("groupsFor with the local model's hint", () => {
+  it("sends the whole core and the keyword extras without a hint", () => {
+    expect(groupsFor("auto", "make the box red", empty)).toEqual(CORE_GROUPS);
+    expect(groupsFor("auto", "zoom in on the box", empty, { core: null })).toEqual([...CORE_GROUPS, "scroll"]);
+  });
+
+  it("splits the core when the hint names its groups", () => {
+    expect(groupsFor("auto", "make the box red", empty, { core: ["edit"] })).toEqual(["edit"]);
+    expect(groupsFor("auto", "zoom in on the box", empty, { core: [] })).toEqual(["scroll"]);
+  });
+
+  it("keeps the keyword extras and adds the core groups they rely on", () => {
+    expect(groupsFor("auto", "make the label fit the box", empty, { core: ["edit"] })).toEqual(["edit", "scroll"]);
+    expect(groupsFor("auto", "draw a flowchart of login", empty, { core: [] })).toEqual(["draw", "arrow", "diagram"]);
+    expect(groupsFor("auto", "the box is 3 m wide", empty, { core: ["edit"] })).toEqual(["draw", "edit", "dimension"]);
   });
 });
 
 describe("routed tools and prompt", () => {
   it("keeps the core set small and every set byte-stable", () => {
-    const core = toolsFor([]);
+    const core = toolsFor(CORE_GROUPS);
+    expect(toolsFor([]).map((t) => t.name)).toEqual(["undo_last_command", "clear_board"]);
+    expect(toolsFor(["edit"]).map((t) => t.name)).toEqual([
+      "move_element",
+      "update_element",
+      "delete_elements",
+      "undo_last_command",
+      "clear_board",
+    ]);
     expect(JSON.stringify(core).length).toBeLessThan(8000);
-    expect(toolsFor([])).toBe(core);
+    expect(toolsFor(CORE_GROUPS)).toBe(core);
     expect(toolsFor(["chart", "scroll"])).toBe(toolsFor(["chart", "scroll"]));
     expect(core.at(-1)?.cache_control).toEqual({ type: "ephemeral" });
     expect(core.slice(0, -1).every((t) => !t.cache_control)).toBe(true);
@@ -95,13 +124,13 @@ describe("routed tools and prompt", () => {
   });
 
   it("sends a group's guidance only with its tools", () => {
-    const core = promptFor([]);
-    for (const g of TOOL_GROUPS) expect(core).not.toContain(GROUP_PROMPT[g]);
+    const core = promptFor(CORE_GROUPS);
+    for (const g of EXTRA_GROUPS) expect(core).not.toContain(GROUP_PROMPT[g]);
     expect(promptFor(["chart"])).toContain(GROUP_PROMPT.chart);
     expect(promptFor(["chart"])).not.toContain(GROUP_PROMPT.graph);
     expect(core).toContain("approximate it with shapes and text");
     expect(SYSTEM_PROMPT).not.toContain("approximate it with shapes and text");
-    expect(promptFor([])).toBe(core);
+    expect(promptFor(CORE_GROUPS)).toBe(core);
   });
 
   it("drops chart data lines without the chart group", () => {

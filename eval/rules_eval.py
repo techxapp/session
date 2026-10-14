@@ -53,7 +53,7 @@ def main() -> None:
             if not ok:
                 (wrong if tier == "rules" else missed).append((s, actions, want))
         else:
-            exp_route, exp_action = expected_route(expected_of(s))
+            exp_route, exp_action = expected_route(expected_of(s), s["text"])
             if tier != "rules":
                 ok = True
                 if exp_route == "fast":

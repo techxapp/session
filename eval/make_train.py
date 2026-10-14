@@ -75,6 +75,14 @@ CHATTER = [
     "what does everyone think", "I need to check with my manager", "it's raining here today", "testing, one two three",
     "mute yourself please", "the roadmap looks ambitious", "let's vote on it", "can someone take notes",
     "oh nice", "right, exactly", "I'll send the link in chat", "how was your weekend", "sorry, that was my dog",
+    # View-like and drawing-like chatter: the view and other answers must not fire on talk about screens, calls, slides.
+    "can you share your screen", "your screen is frozen", "scroll up in the chat", "I'll send the zoom link",
+    "let's hop on a zoom call", "my screen went black", "move your camera a bit, I can only see half your face",
+    "the page won't load", "I keep scrolling through slack", "next slide please", "go back to the previous slide",
+    "can you zoom in on your camera", "let's go back to the top of the agenda", "I'm zooming out of here, bye",
+    "look it up later", "show me your dog", "we drew straws for it", "I'm drawing a blank", "let's chart a new course",
+    "the graph in the report looks off", "plot twist", "she walked over to my desk", "the car broke down",
+    "my cat is on the keyboard again", "I'll draw up the contract tomorrow", "where's my coffee", "can everyone scroll down in the doc",
 ]  # fmt: skip
 UNDO = ["undo", "undo that", "undo the last change", "go back", "take that back", "revert that", "undo please",
         "oops, undo", "reverse that", "put it back the way it was", "undo what you just did", "go back one step",
@@ -85,6 +93,65 @@ CLEAR = ["clear the board", "clear everything", "clear all", "wipe the board", "
 FILLERS = ["lets", "let's", "uh", "um", "okay", "ok so", "so", "please", "can you", "could you", "hey,", "alright,", "now", "and now", "uh, um,"]
 SUFFIXES = ["please", "thanks", "now", "for me", "real quick", "if you can"]
 CORRECTIONS = [", no wait, {}", ", sorry, I mean {}", "... actually {}", ", no, {}", ", I mean {}"]
+
+
+# Scroll and zoom phrasings per view answer ({r} = an element reference, {d} = a direction word).
+VIEW_IN = ["zoom in", "zoom in a bit", "get closer", "closer please", "can we get a closer look", "magnify", "magnify the view",
+           "make everything look bigger", "enlarge the view", "zoom closer", "push in a little", "let me see it up close",
+           "go in closer", "increase the zoom", "bump up the zoom", "more zoom", "zoom in more", "zoom in a lot", "zoom way in",
+           "I can't read it, zoom in", "make the view bigger", "move the camera closer"]  # fmt: skip
+VIEW_IN_ON = ["zoom in on {r}", "get closer to {r}", "magnify {r}", "zoom into {r}", "give me a close-up of {r}", "close in on {r}",
+              "let me see {r} up close", "zoom in a bit on {r}", "take a closer look at {r}"]  # fmt: skip
+VIEW_OUT = ["zoom out", "zoom out a bit", "pull back", "back up a little", "pull the camera back", "make everything look smaller",
+            "decrease the zoom", "less zoom", "zoom out more", "zoom way out", "step back a bit", "too close, zoom out",
+            "I'm too zoomed in", "reduce the zoom", "widen the view", "zoom out a lot", "back the camera up", "go out a bit"]  # fmt: skip
+VIEW_LEVEL = ["zoom to {n}%", "set the zoom to {n} percent", "make the zoom {n}%", "change the zoom level to {n}%",
+              "{n} percent zoom please", "go to {n}% zoom", "put the zoom at {n}%", "zoom to {k}x", "I want {n}% zoom",
+              "reset the zoom", "put the view back to normal size", "normal zoom please", "put the zoom back to normal",
+              "go back to actual size", "default zoom", "zoom back to 100%", "set the zoom back to the default", "{k}x zoom"]  # fmt: skip
+VIEW_FIT = ["show everything", "fit everything on screen", "let me see the whole board", "zoom to fit", "show me the whole thing",
+            "fit it all in", "I want to see everything at once", "zoom out to see it all", "show the entire board",
+            "get everything on one screen", "show me all of it", "fit the board to the screen", "bring everything into view",
+            "can I see the full board"]  # fmt: skip
+VIEW_ELEMENT = ["go to {r}", "take me to {r}", "show me {r}", "where is {r}", "where's {r}", "find {r}", "jump to {r}",
+                "focus on {r}", "center on {r}", "centre the view on {r}", "scroll to {r}", "pan over to {r}", "bring {r} into view",
+                "let's look at {r}", "head over to {r}", "can you find {r} for me", "put {r} in the middle of the screen",
+                "navigate to {r}", "I can't see {r}, where did it go", "move the camera to {r}"]  # fmt: skip
+VIEW_EDGE = {
+    "up": ["go to the top", "back to the top", "scroll all the way up", "jump to the start", "take me to the beginning",
+           "head to the top of the page", "back to the start of the board", "all the way up please"],
+    "down": ["scroll all the way down", "jump to the bottom", "go to the very end", "scroll to the bottom of the board",
+             "go right to the end", "take me to the bottom"],
+    "left": ["all the way to the left", "scroll all the way left", "go to the far left", "jump to the left edge"],
+    "right": ["all the way to the right", "go to the far right", "scroll all the way right", "jump to the right edge"],
+}  # fmt: skip
+VIEW_DIRECTION = ["scroll {d}", "scroll {d} a bit", "pan {d}", "pan the view {d}", "move the view {d}", "move the screen {d}",
+                  "shift the camera {d}", "scroll {d} a page", "show me what's {w}", "let me see what's {w}", "scroll {d} a lot",
+                  "scroll the page {d}", "drag the view {d}", "slide the view {d}", "pan a little {d}", "look a bit further {d}"]  # fmt: skip
+VIEW_BEYOND = {"up": "above", "down": "below", "left": "to the left", "right": "to the right"}
+# Commands only the assistant can do: pictures, diagrams, charts/graphs, motion, measurements.
+OBJECTS = sorted(json.loads((HERE.parent / "shared" / "objects.json").read_text(encoding="utf-8")))
+TOPICS = ["the signup process", "our deploy pipeline", "how payments work", "the login flow", "a request from browser to database",
+          "the hiring process", "order fulfillment", "the release process", "how a pull request gets merged", "customer support tickets"]  # fmt: skip
+DATA = ["sales by quarter", "q1 10 q2 20 q3 15", "our budget split", "monthly signups", "revenue per region", "bugs per team",
+        "jan 5, feb 8, mar 12", "votes: yes 12 no 4"]  # fmt: skip
+FUNCS = ["y = x^2", "y = 2x + 1", "sin(x)", "x squared", "sine of x", "x cubed", "the parabola y equals x squared", "cos x",
+         "e to the x", "y = 1/x"]  # fmt: skip
+OTHER_OBJECT = ["draw a {o}", "add a {o}", "put a {o} next to {r}", "sketch a {o}", "can you draw me a {o}", "add two {o}s",
+                "a {o} please", "I need a picture of a {o}", "show a {o} here", "draw a big {o} on the right", "add a {o} under {r}",
+                "put a little {o} in the corner"]  # fmt: skip
+OTHER_DIAGRAM = ["draw a flowchart of {t}", "sketch the architecture of {t}", "map out {t}", "lay out the steps of {t}",
+                 "diagram {t}", "show how {t} works step by step", "make an org chart for the design team",
+                 "draw a mind map about {t}", "break {t} down into boxes and arrows", "draw the pipeline for {t}",
+                 "visualize {t} as a flow", "sketch a sequence diagram of {t}", "build a decision tree for {t}"]  # fmt: skip
+OTHER_GRAPH = ["plot {f}", "graph {f}", "draw the curve of {f}", "plot {f} from -5 to 5", "sketch {f} on axes"]
+OTHER_CHART = ["draw a bar chart of {x}", "make a pie chart of {x}", "show {x} as a line chart", "chart {x}", "visualize {x}",
+               "add a histogram of {x}", "show {x} as bars", "draw a graph of {x}"]  # fmt: skip
+OTHER_MOTION = ["make {r} walk to {s}", "{r} runs toward {s}", "animate {r} moving away from {s}", "have {r} drive over to {s}",
+                "{r} slowly creeps up to {s}", "let {r} fly across to {s}", "{r} chases {s}", "make {r} zoom over to {s}",
+                "{r} strolls over to {s}", "move {r} slowly towards {s}"]  # fmt: skip
+OTHER_MEASURE = ["{r} is {n} ft tall", "mark {r} as {n} meters wide", "the distance between {r} and {s} is {n} feet",
+                 "add a dimension line of {n} m to {r}", "label the height of {r} {n} cm", "{r} and {s} are {n} m apart"]  # fmt: skip
 
 
 def make_scene(rng: random.Random) -> dict:
@@ -141,7 +208,7 @@ def references(el: dict, scene: dict, rng: random.Random) -> list[str]:
 
 def blank(action: str) -> dict:
     return {"action": action, "target": "none", "color": "none", "kind": "none", "size": "none", "direction": "none",
-            "multi_step": False, "needs_text": False}  # fmt: skip
+            "view": "none", "multi_step": False, "needs_text": False}  # fmt: skip
 
 
 def pick_target(scene: dict, rng: random.Random) -> tuple[dict, str] | None:
@@ -259,8 +326,27 @@ def gen(cat: str, scene: dict, rng: random.Random) -> tuple[str, dict] | None:
         two = [e for e in els]
         opts = ["shapes", "add_connect", "add_two", "three"]
         if len(two) >= 2:
-            opts += ["delete_two", "recolor_move", "recolor_two", "move_delete"]
+            opts += ["delete_two", "recolor_move", "recolor_two", "move_delete", "view_edit", "view_delete", "mixed", "mixed", "mixed"]
         kind = rng.choice(opts)
+        if kind == "mixed":  # new things, edits and arrows together: every core group
+            a, b = (" ".join(words(e["label"])) for e in rng.sample(els, 2))
+            noun, new = rng.choice(["box", "circle", "note", "diamond"]), rng.choice(NEW_TEXTS)
+            text = rng.choice([
+                f"add a {noun} called {new} and make the {a} {rng.choice(COLORS)}",
+                f"connect the {a} to the {b} and make it {rng.choice(COLORS)}",
+                f"delete the {a} and add a {noun} saying {new}",
+                f"make the {a} bigger and draw an arrow to the {b}",
+                f"add a {noun} next to the {a} and connect them",
+                f"move the {a} {rng.choice(['left', 'right', 'up', 'down'])} and link it to the {b}",
+                f"rename the {a} to {new} and add a {noun} below it",
+            ])  # fmt: skip
+            return text, {"action": "add_shape" if text.startswith("add") else "update_element", "multi_step": True, "core": "mixed"}
+        if kind in ("view_edit", "view_delete"):  # a view change plus an edit: two changes, so it goes to the assistant
+            ra = " ".join(words(rng.choice(els)["label"]))
+            verb = rng.choice(["zoom in on", "go to", "focus on"] if kind == "view_edit" else ["scroll to", "go to", "find"])
+            edit = f"make it {rng.choice(COLORS)}" if kind == "view_edit" else "delete it"
+            view = "in" if verb == "zoom in on" else "element"
+            return f"{verb} the {ra} and {edit}", {"action": "view", "view": view, "multi_step": True, "needs_text": False, "core": "edit"}
         if kind in ("shapes", "add_two"):
             k1, k2 = rng.sample(list(NEW_SHAPE_NOUNS), 2)
             text = f"{rng.choice(['add', 'draw'])} a {NEW_SHAPE_NOUNS[k1][0]} and a {NEW_SHAPE_NOUNS[k2][0]}"
@@ -275,7 +361,7 @@ def gen(cat: str, scene: dict, rng: random.Random) -> tuple[str, dict] | None:
                 return None
             other = " ".join(words(rng.choice(els)["label"]))
             text = f"add a box called {rng.choice(NEW_TEXTS)} and connect it to {other}"
-            return text, {"action": "add_shape", "multi_step": True, "needs_text": True}
+            return text, {"action": "add_shape", "multi_step": True, "needs_text": True, "core": "mixed"}
         a, b = rng.sample(els, 2)
         ra, rb = (" the " + " ".join(words(e["label"])) for e in (a, b))
         if kind == "delete_two":
@@ -310,14 +396,54 @@ def gen(cat: str, scene: dict, rng: random.Random) -> tuple[str, dict] | None:
         d = rng.choice(list(DIRECTION_WORDS))
         return f"move {grp} {rng.choice(DIRECTION_WORDS[d][:2])}", {"action": "move_element", "direction": d, "multi_step": True,
                                                                     "needs_text": False, "kind": "none"}  # fmt: skip
+    if cat == "view":
+        kind = rng.choices(["in", "in_on", "out", "level", "fit", "element", "edge", "direction"], [4, 3, 4, 3, 3, 5, 3, 5])[0]
+        exp = {**blank("view"), "view": kind}
+        if kind in ("in_on", "element"):
+            if not (p := pick_target(scene, rng)):
+                return None
+            el, ref = p
+            exp["target"] = el["id"]
+            if kind == "in_on":
+                return rng.choice(VIEW_IN_ON).format(r=ref), {**exp, "view": "in"}
+            return rng.choice(VIEW_ELEMENT).format(r=ref), exp
+        if kind == "level":
+            tpl = rng.choice(VIEW_LEVEL)
+            return tpl.format(n=rng.choice([25, 50, 75, 80, 120, 125, 150, 200, 250, 300, 400]), k=rng.choice([2, 3, 4])), exp
+        if kind == "edge":
+            d = rng.choice(list(VIEW_EDGE))
+            return rng.choice(VIEW_EDGE[d]), {**exp, "direction": d}
+        if kind == "direction":
+            d = rng.choice(list(VIEW_BEYOND))
+            return rng.choice(VIEW_DIRECTION).format(d=d, w=VIEW_BEYOND[d]), {**exp, "direction": d}
+        return rng.choice({"in": VIEW_IN, "out": VIEW_OUT, "fit": VIEW_FIT}[kind]), exp
+    if cat == "other":
+        refs = [rng.choice(references(el, scene, rng)) for el in rng.sample(els, min(2, len(els)))]
+        extra = rng.choice(["object", "object", "diagram", "graph", "chart", "motion", "dimension"])
+        tpls = {"object": OTHER_OBJECT, "diagram": OTHER_DIAGRAM, "graph": OTHER_GRAPH, "chart": OTHER_CHART,
+                "motion": OTHER_MOTION, "dimension": OTHER_MEASURE}[extra]  # fmt: skip
+        tpls = [t for t in tpls if ("{r}" not in t or refs) and ("{s}" not in t or len(refs) == 2)]
+        if not tpls:
+            return None
+        text = rng.choice(tpls).format(o=rng.choice(OBJECTS), t=rng.choice(TOPICS), x=rng.choice(DATA), f=rng.choice(FUNCS),
+                                       r=(refs or [""])[0], s=refs[-1] if refs else "", n=rng.choice([2, 3, 5, 10, 12, 20, 30]))  # fmt: skip
+        # Only what such a command clearly answers; colour, kind, target... stay unlabelled. Motion moves an existing
+        # element (edit); the rest draw something new.
+        return text, {"action": "other", "view": "none", "core": "edit" if extra == "motion" else "new"}
     raise ValueError(cat)
 
 
 PRONOUN_REFS = {"it", "this", "that", "this one", "that one"}
 # Category weights; labelled noise is applied on top of the single-element categories.
-WEIGHTS = {"chatter": 9, "undo": 6, "clear": 4, "delete": 11, "recolor": 14, "resize": 9, "move": 11, "move_rel": 2,
-           "add_shape": 10, "labelled_shape": 5, "text": 4, "arrow": 4, "rename": 4, "multi": 6, "group": 6}  # fmt: skip
-NOISY = {"delete", "recolor", "resize", "move", "add_shape", "undo", "chatter"}
+WEIGHTS = {"chatter": 11, "undo": 6, "clear": 4, "delete": 11, "recolor": 14, "resize": 9, "move": 11, "move_rel": 2,
+           "add_shape": 10, "labelled_shape": 5, "text": 4, "arrow": 4, "rename": 4, "multi": 10, "group": 6,
+           "view": 14, "other": 12}  # fmt: skip
+NOISY = {"delete", "recolor", "resize", "move", "add_shape", "undo", "chatter", "view", "other"}
+# The `route` answer per category: what code alone can build vs what needs the assistant.
+SIMPLE = {"undo", "clear", "delete", "recolor", "resize", "move", "add_shape", "group", "view"}
+# The `core` answer per category (the cloud's core tool groups); multi and other rows set their own.
+CORE_OF = {"delete": "edit", "recolor": "edit", "resize": "edit", "move": "edit", "move_rel": "edit", "rename": "edit",
+           "group": "edit", "add_shape": "new", "labelled_shape": "new", "text": "new", "arrow": "connect"}  # fmt: skip
 
 
 def add_noise(text: str, rng: random.Random) -> str:
@@ -357,8 +483,10 @@ def main() -> None:
         if " ".join(words(text)) in eval_texts:
             dropped += 1
             continue
-        exp = dict(exp)
+        multi_core = "edit" if exp["action"] in ("delete_elements", "update_element", "move_element") else "new"
+        exp = {"view": "none", "core": CORE_OF.get(cat, multi_core if cat == "multi" else "none"), **exp}
         exp["on_board"] = exp["action"] != "none"
+        exp["route"] = "none" if cat == "chatter" else "simple" if cat in SIMPLE else "assistant"
         questions = build_questions(scene)
         if "target" not in questions:
             exp.pop("target", None)

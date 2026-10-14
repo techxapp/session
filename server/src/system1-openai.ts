@@ -5,7 +5,7 @@ import { DEFAULT_EFFORT, DEFAULT_MAX_TURNS, openaiEffortParam, type ReasoningEff
 import { DEFAULT_OBJECT_MODE, parseToolCall, type ObjectMode } from "./objects";
 import { buildUserMessage, promptFor } from "./prompt";
 import { TOOLS_BY_MODE, toolsFor, type Emit } from "./system1";
-import { DEFAULT_TOOL_ROUTER, groupsFor, groupsLabel, type ToolGroup } from "./toolRouter";
+import { DEFAULT_TOOL_ROUTER, groupsFor, groupsLabel, type ToolGroup, type ToolHint } from "./toolRouter";
 
 export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 
@@ -78,10 +78,11 @@ export async function runSystem1OpenAI(
   describeError: (err: unknown) => string | undefined = () => undefined,
   objects: ObjectMode = DEFAULT_OBJECT_MODE,
   router: ToolRouterMode = DEFAULT_TOOL_ROUTER,
+  hint?: ToolHint,
 ) {
   const startedAt = Date.now();
   const multiStep = looksMultiStep(req.text);
-  const groups = groupsFor(router, req.text, req.scene);
+  const groups = groupsFor(router, req.text, req.scene, hint);
   const tools = openaiToolsFor(groups, objects);
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: promptFor(groups) },

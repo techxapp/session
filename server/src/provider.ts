@@ -5,11 +5,15 @@ import { DEFAULT_ANTHROPIC_MODEL, runSystem1, type Emit } from "./system1";
 import { DEFAULT_EFFORT, DEFAULT_MAX_TURNS, effortFromEnv, maxTurnsFromEnv, type ReasoningEffort } from "./effort";
 import { DEFAULT_OBJECT_MODE, objectModeFromEnv, type ObjectMode } from "./objects";
 import { DEFAULT_OPENAI_MODEL, runSystem1OpenAI } from "./system1-openai";
-import { DEFAULT_TOOL_ROUTER, toolRouterFromEnv } from "./toolRouter";
+import { DEFAULT_TOOL_ROUTER, toolRouterFromEnv, type ToolHint } from "./toolRouter";
 
 export type ProviderName = ApiStyle;
 
 /** A model backend for System 1. The HTTP layer only talks to this. */
+export interface RunOptions {
+  toolHint?: ToolHint;
+}
+
 export interface Provider {
   name: ProviderName;
   model: string;
@@ -20,7 +24,8 @@ export interface Provider {
   tools: ToolRouterMode;
   /** True when a local fast-path model answers simple commands first (see fastpath.ts). */
   fastPath?: boolean;
-  run(req: CommandRequest, emit: Emit, signal?: AbortSignal): Promise<void>;
+  /** `opts.toolHint`: the local decision model's tool groups (withFastPath), merged into the tool router's pick. */
+  run(req: CommandRequest, emit: Emit, signal?: AbortSignal, opts?: RunOptions): Promise<void>;
   /** User-facing message for a failed call, or undefined if the error isn't one this provider recognises. */
   describeError(err: unknown): string | undefined;
 }
@@ -41,7 +46,7 @@ export function anthropicProvider(
     hasKey,
     objects,
     tools,
-    run: (req, emit, signal) => runSystem1(client, req, emit, signal, model, effort, objects, tools),
+    run: (req, emit, signal, opts) => runSystem1(client, req, emit, signal, model, effort, objects, tools, opts?.toolHint),
     describeError(err) {
       if (err instanceof Anthropic.AuthenticationError) return `The Anthropic API rejected the key. ${KEY_HELP}`;
       if (err instanceof Anthropic.RateLimitError) return "Rate limited by the model API. Try again in a moment.";
@@ -67,8 +72,20 @@ export function openaiProvider(
     hasKey,
     objects,
     tools,
-    run: (req, emit, signal) =>
-      runSystem1OpenAI(client, req, emit, signal, model, effort, maxTurns, (e) => provider.describeError(e), objects, tools),
+    run: (req, emit, signal, opts) =>
+      runSystem1OpenAI(
+        client,
+        req,
+        emit,
+        signal,
+        model,
+        effort,
+        maxTurns,
+        (e) => provider.describeError(e),
+        objects,
+        tools,
+        opts?.toolHint,
+      ),
     describeError(err) {
       if (err instanceof OpenAI.AuthenticationError) return `The API rejected the key. ${KEY_HELP}`;
       if (err instanceof OpenAI.RateLimitError) return "Rate limited by the model API. Try again in a moment.";

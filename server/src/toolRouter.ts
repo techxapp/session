@@ -2,27 +2,29 @@ import type { ActionName, SceneSummary, ToolRouterMode } from "@board/shared";
 import { mentionsObject } from "./objects";
 
 /**
- * Tool router: a cloud request carries the core tools plus only the groups a command needs, picked here in
- * plain code (keywords + the scene), so requests stay small (free tiers with small per-request limits answer
- * 413 to the full ~21k-character tool list). Misses degrade gracefully: the core tools can still draw a
- * labelled box. Each group also brings its own system-prompt bullets (prompt.ts#promptFor), and chart
- * `data` lines are only sent with the chart group. Over-including a group only costs a few k characters.
+ * Tool router: a cloud request carries the base tools plus only the groups a command needs, so requests stay
+ * small (free tiers with small per-request limits answer 413 to the full ~21k-character tool list).
+ * - Extra groups (diagram, object, ...) are picked in plain code (keywords + the scene), erring towards including.
+ * - The core groups (draw, edit, arrow) are all sent unless the local decision model (fastpath/, when running) is
+ *   confident which ones the command needs (`ToolHint.core`); keywords never split them, but an extra group adds
+ *   the core groups its guidance relies on (NEEDS).
+ * Misses degrade gracefully: the prompt tells the model to approximate and say so. Each extra group also brings
+ * its own system-prompt bullets (prompt.ts#promptFor), and chart `data` lines are only sent with the chart group.
  */
-export type ToolGroup = "diagram" | "object" | "dimension" | "motion" | "graph" | "chart" | "scroll";
+export type CoreGroup = "draw" | "edit" | "arrow";
+export type ExtraGroup = "diagram" | "object" | "dimension" | "motion" | "graph" | "chart" | "scroll";
+export type ToolGroup = CoreGroup | ExtraGroup;
+export const CORE_GROUPS: CoreGroup[] = ["draw", "edit", "arrow"];
 /** In system-prompt order. */
-export const TOOL_GROUPS: ToolGroup[] = ["diagram", "object", "dimension", "motion", "graph", "chart", "scroll"];
+export const EXTRA_GROUPS: ExtraGroup[] = ["diagram", "object", "dimension", "motion", "graph", "chart", "scroll"];
+export const TOOL_GROUPS: ToolGroup[] = [...CORE_GROUPS, ...EXTRA_GROUPS];
 
-export const CORE_TOOLS: ActionName[] = [
-  "add_shape",
-  "add_text",
-  "add_arrow",
-  "move_element",
-  "update_element",
-  "delete_elements",
-  "undo_last_command",
-  "clear_board",
-];
+/** Always sent: tiny, and "undo" can follow any command. */
+export const BASE_TOOLS: ActionName[] = ["undo_last_command", "clear_board"];
 export const GROUP_TOOLS: Record<ToolGroup, ActionName[]> = {
+  draw: ["add_shape", "add_text"],
+  edit: ["move_element", "update_element", "delete_elements"],
+  arrow: ["add_arrow"],
   diagram: ["generate_diagram"],
   object: ["add_object"],
   dimension: ["add_dimension"],
@@ -41,14 +43,31 @@ export function toolRouterFromEnv(env: NodeJS.ProcessEnv = process.env): ToolRou
   return v;
 }
 
-/** The groups a request gets: every group for "all", else what the command's words and the scene call for. */
-export function groupsFor(mode: ToolRouterMode, text: string, scene: SceneSummary): ToolGroup[] {
-  return mode === "all" ? TOOL_GROUPS : selectGroups(text, scene);
+/** The local decision model's tool answer (fastpath/decide.py tool_hint); null/absent = not confident. */
+export interface ToolHint {
+  core?: CoreGroup[] | null;
 }
 
-/** Label for the done event and the activity log: ["all"] or ["core", ...extras]. */
+/** Core groups an extra group's guidance relies on: diagrams are extended with shapes and arrows, pictures get captions. */
+const NEEDS: Partial<Record<ExtraGroup, CoreGroup[]>> = { diagram: ["draw", "arrow"], object: ["draw"], dimension: ["draw"] };
+
+/**
+ * The groups a request gets, in TOOL_GROUPS order: every group for "all"; else the keyword extras, the core
+ * groups the local model's hint names (all three without one) and those the extras rely on.
+ */
+export function groupsFor(mode: ToolRouterMode, text: string, scene: SceneSummary, hint?: ToolHint): ToolGroup[] {
+  if (mode === "all") return TOOL_GROUPS;
+  const extras = selectGroups(text, scene);
+  const core = new Set<ToolGroup>(hint?.core ?? CORE_GROUPS);
+  for (const g of extras) for (const c of NEEDS[g] ?? []) core.add(c);
+  return TOOL_GROUPS.filter((g) => core.has(g) || (extras as ToolGroup[]).includes(g));
+}
+
+/** Label for the done event and the activity log: ["all"], ["core", ...extras], or the groups ("base" if none). */
 export function groupsLabel(groups: ToolGroup[]): string[] {
-  return groups.length === TOOL_GROUPS.length ? ["all"] : ["core", ...groups];
+  if (groups.length === TOOL_GROUPS.length) return ["all"];
+  if (CORE_GROUPS.every((g) => groups.includes(g))) return ["core", ...groups.filter((g) => !CORE_GROUPS.includes(g as CoreGroup))];
+  return groups.length ? groups : ["base"];
 }
 
 const DIAGRAM =
@@ -90,11 +109,11 @@ export function editsChart(text: string, scene: SceneSummary): boolean {
   return false;
 }
 
-/** The extra tool groups a command needs, in TOOL_GROUPS order. Plain code: keywords plus the scene. */
-export function selectGroups(text: string, scene: SceneSummary): ToolGroup[] {
+/** The extra tool groups a command needs, in EXTRA_GROUPS order. Plain code: keywords plus the scene. */
+export function selectGroups(text: string, scene: SceneSummary): ExtraGroup[] {
   const t = text.toLowerCase();
   const hasChart = scene.elements.some((e) => e.type === "chart");
-  const on: Record<ToolGroup, boolean> = {
+  const on: Record<ExtraGroup, boolean> = {
     diagram: DIAGRAM.test(t) || MANY_BOXES.test(t),
     object: mentionsObject(t),
     dimension: MEASUREMENT.test(t) || DIMENSION.test(t),
@@ -103,5 +122,5 @@ export function selectGroups(text: string, scene: SceneSummary): ToolGroup[] {
     chart: CHART.test(t) || (hasChart && (CHART_ON_BOARD.test(t) || editsChart(t, scene))),
     scroll: SCROLL.test(t),
   };
-  return TOOL_GROUPS.filter((g) => on[g]);
+  return EXTRA_GROUPS.filter((g) => on[g]);
 }

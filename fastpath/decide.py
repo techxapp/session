@@ -23,11 +23,19 @@ ACTION_DESCRIPTIONS = {
     "delete_elements": "Remove existing elements from the board.",
     "undo_last_command": "Undo what the previous command did.",
     "clear_board": "Erase the entire board.",
+    "view": "Scroll, pan or zoom the view (what the screen shows) without changing the board.",
+    "other": "Something else the board can draw: pictures of things, whole diagrams, charts, graphs, measurements or animation.",
     "none": "Not a whiteboard command: chatter, noise, or talking to someone else.",
 }
 # Actions code can build from closed-set answers alone; everything else goes to the LLM.
-FAST_ACTIONS = {"undo_last_command", "clear_board", "delete_elements", "update_element", "move_element", "add_shape"}
-FIELDS = ["action", "target", "color", "kind", "size", "direction", "multi_step", "needs_text"]
+FAST_ACTIONS = {"undo_last_command", "clear_board", "delete_elements", "update_element", "move_element", "add_shape", "view"}
+FIELDS = ["route", "action", "target", "color", "kind", "size", "direction", "view", "multi_step", "needs_text", "core"]
+# Bumped whenever build_questions changes in a way a checkpoint must be retrained for. train_laya.py writes it into
+# the checkpoint (QUESTIONS_FILE) and the sidecar refuses a checkpoint trained on other questions.
+# v3: route, view and core questions; view and other actions. (ckpt-v3 was also trained on an `extra` tool-group
+# question; it was dropped: 12/70 confident wrong answers on the eval sets, and each question costs ~27 ms.)
+QUESTIONS_VERSION = 3
+QUESTIONS_FILE = "voice_board.json"
 
 
 def describe_element(el: dict, scene: dict) -> str:
@@ -63,10 +71,35 @@ def build_questions(scene: dict) -> dict:
                 "true": "An instruction to draw, change, move, delete, undo or clear something on the board.",
             },
         },
+        "route": {
+            "type": "choice",
+            "instructions": "Can one simple fixed action do this, or does it need the full assistant?",
+            "criteria": {
+                "simple": "One simple change: undo, clear, delete, recolor, resize, move in a direction, draw a plain "
+                "unlabelled shape, or scroll or zoom the view.",
+                "assistant": "Needs the assistant: new text or labels, arrows, pictures, diagrams, charts or graphs, "
+                "measurements, animation, placing things next to each other, or several changes.",
+                "none": "Not a whiteboard command: chatter, noise, or talking to someone else.",
+            },
+        },
         "action": {
             "type": "choice",
             "instructions": "What is the main thing the command asks the whiteboard to do?",
             "criteria": dict(ACTION_DESCRIPTIONS),
+        },
+        "view": {
+            "type": "choice",
+            "instructions": "How should the view (what the screen shows) change? The board itself stays the same.",
+            "criteria": {
+                "in": "zoom in: get closer, magnify, make things look bigger on screen",
+                "out": "zoom out: pull back, make things look smaller on screen",
+                "level": "set the zoom to a given level, or back to normal size",
+                "fit": "show the whole board at once",
+                "element": "bring one existing element into view or centre the screen on it",
+                "edge": "go all the way to the top, bottom, start, end or one side of the board",
+                "direction": "scroll or pan some way up, down, left or right",
+                "none": "the view does not change",
+            },
         },
         "color": {
             "type": "choice",
@@ -91,13 +124,25 @@ def build_questions(scene: dict) -> dict:
         },
         "direction": {
             "type": "choice",
-            "instructions": "In which direction should an element be moved?",
+            "instructions": "In which direction should an element or the view move?",
             "criteria": {
                 "left": "to the left",
                 "right": "to the right",
-                "up": "up",
-                "down": "down",
-                "none": "nothing is moved in a direction",
+                "up": "up, or the top or start",
+                "down": "down, or the bottom or end",
+                "none": "nothing moves in a direction",
+            },
+        },
+        # Tool groups for the cloud model (server/src/toolRouter.ts), used when the command goes there.
+        "core": {
+            "type": "choice",
+            "instructions": "Which basic board tools does the command need?",
+            "criteria": {
+                "new": "only draws new things: shapes, text, notes, pictures, diagrams, charts or graphs",
+                "edit": "only changes, moves, recolors, resizes, renames, animates or deletes things already on the board",
+                "connect": "only connects things with arrows or lines",
+                "mixed": "several of these: new things, changes and arrows",
+                "none": "none of these: only the view, undo, clear, or not a board command",
             },
         },
         "multi_step": {
@@ -172,7 +217,7 @@ def words(text: str) -> list[str]:
 _CATALOG = json.loads((Path(__file__).resolve().parent.parent / "shared" / "objects.json").read_text(encoding="utf-8"))
 # Longest first, so "police car" wins over "car".
 OBJECT_WORDS = dict(sorted(((w, n) for n, o in _CATALOG.items() for w in (n, *o["aliases"])), key=lambda p: -len(p[0])))
-EDIT_ACTIONS = SET_ACTIONS | {"undo_last_command", "clear_board"}
+EDIT_ACTIONS = SET_ACTIONS | {"undo_last_command", "clear_board", "scroll_view", "zoom_view"}  # "zoom in on the tree" is no drawing
 
 
 # "10 ft", "20 meters", "5'": a measurement, drawn with add_dimension (`measure_command`). Laya has no such action.
@@ -281,7 +326,7 @@ def resolve_set(said: list[str], elements: list[dict]) -> list[str] | str | None
     kind_at = [i for i, w in enumerate(said) if w in KIND_WORDS or w in PLURAL_KIND_WORDS or w in EVERYTHING_WORDS]
     kinds = {KIND_WORDS.get(w) or PLURAL_KIND_WORDS.get(w) for w in said} - {None}
     # A color before the type word filters ("the yellow notes"); one after it is the new color.
-    filters = [w for w in said[: kind_at[0]] if w in COLORS] if kind_at else []
+    filters = color_filters(said)
     if SET_BLOCKERS & set(said) or len(kinds) > 1 or len(filters) > 1 or not kind_at:
         return SEVERAL
     if kinds:
@@ -459,12 +504,74 @@ def parse_answers(raw: dict) -> dict:
     return out
 
 
+# What a decision model can't answer from options: the zoom level's number and how far to scroll or zoom.
+LEVEL = re.compile(r"\b(\d+(?:\.\d+)?)\s*(%|percent\b|x\b|times\b)?", re.I)
+LEVEL_RESET = {"normal", "actual", "reset", "default", "original", "regular", "standard"}
+AMOUNT_LITTLE = {"little", "bit", "slightly", "tad", "touch", "smidge", "notch"}
+# No "page"/"screen": "scroll the page down" is no further than "scroll down".
+AMOUNT_FAR = {"lot", "far", "way", "much", "loads", "screenful"}
+
+
+def zoom_level(text: str) -> int | None:
+    """Percent for "150%", "150 percent", "2x", "2 times", or 100 for "back to normal"; None if unclear."""
+    found = LEVEL.findall(text)
+    if len(found) > 1:
+        return None
+    if found:
+        n, unit = float(found[0][0]), found[0][1].lower()
+        if unit in ("x", "times"):
+            n *= 100
+        elif not unit and n < 10:  # "zoom to 2": a factor or a slip, not 2%
+            return None
+        return round(n) if 10 <= n <= 3000 else None
+    return 100 if LEVEL_RESET & set(words(text)) else None
+
+
+def view_amount(text: str) -> str | None:
+    said = set(words(text))
+    little, far = AMOUNT_LITTLE & said, AMOUNT_FAR & said
+    return None if little and far else "little" if little else "far" if far else None
+
+
+def code_answers(text: str) -> dict:
+    """Answers code reads from the text, merged into the model's (same {field: (value, confidence)} shape)."""
+    return {"level": (zoom_level(text), 1.0), "amount": (view_amount(text), 1.0)}
+
+
+EDGE_OF = {"up": "top", "down": "bottom", "left": "left", "right": "right"}
+
+
+def compose_view(a: dict) -> list[dict] | None:
+    view, target, direction = a["view"], a["target"], a["direction"]
+    if isinstance(target, list) or target == SEVERAL:
+        return None
+    amount = {"amount": a["amount"]} if a.get("amount") else {}
+    on = {"on": target} if target != "none" else {}
+    if view in ("in", "out"):
+        return [{"name": "zoom_view", "input": {"step": view, **amount, **on}}]
+    if view == "level":
+        return [{"name": "zoom_view", "input": {"level": a["level"], **on}}] if a.get("level") else None
+    if view == "fit":
+        return [{"name": "scroll_view", "input": {"fit": "all"}}]
+    if view == "element":
+        return [{"name": "scroll_view", "input": {"to": target}}] if on else None
+    if view == "edge" and direction != "none":
+        return [{"name": "scroll_view", "input": {"edge": EDGE_OF[direction]}}]
+    if view == "direction" and direction != "none":
+        dist = {"distance": a["amount"]} if a.get("amount") else {}
+        return [{"name": "scroll_view", "input": {"direction": direction, **dist}}]
+    return None
+
+
 def compose(a: dict) -> list[dict] | None:
     """Assemble the command's board actions from closed-set answers, or None if code can't build them alone.
 
-    A set target (list of ids) becomes one delete_elements, or one update/move per element.
+    A set target (list of ids) becomes one delete_elements, or one update/move per element. `view` becomes one
+    scroll_view or zoom_view, using the code answers (`code_answers`) for the level and amount.
     """
     action = a["action"]
+    if action == "view":
+        return compose_view(a)
     if action == "undo_last_command":
         return [{"name": action, "input": {}}]
     if action == "clear_board":
@@ -496,6 +603,49 @@ USED_FIELDS = {
     "move_element": ["target", "direction"],
     "add_shape": ["kind", "color"],
 }
+# Same for each view answer. The target counts for zooms too: confidently "none" means no `on`.
+VIEW_FIELDS = {
+    "in": ["target"], "out": ["target"], "level": ["target"], "fit": [],
+    "element": ["target"], "edge": ["direction"], "direction": ["direction"], "none": [],
+}  # fmt: skip
+
+
+def used_fields(ans: dict, action: str) -> list[str]:
+    return ["view", *VIEW_FIELDS[ans["view"][0]]] if action == "view" else USED_FIELDS[action]
+
+
+# The cloud model's core tool groups per `core` answer (server/src/toolRouter.ts CORE_GROUPS).
+CORE_GROUPS = {"new": ["draw"], "edit": ["edit"], "connect": ["arrow"], "mixed": ["draw", "edit", "arrow"], "none": []}
+
+
+def tool_hint(ans: dict, threshold: float) -> dict:
+    """{core: [groups] | None} for the cloud's tool router; None = not confident, and the Node server sends the full core.
+
+    Extra groups stay with the server's keywords.
+    """
+    core, core_conf = ans.get("core", ("mixed", 0.0))
+    return {"core": CORE_GROUPS[core] if core_conf >= threshold else None}
+
+
+def color_filters(said: list[str]) -> list[str]:
+    """Colours before the first type word: "the yellow notes" filters by yellow ("all the yellow notes pink")."""
+    at = next((i for i, w in enumerate(said) if w in KIND_WORDS or w in PLURAL_KIND_WORDS or w in EVERYTHING_WORDS), None)
+    return [w for w in said[:at] if w in COLORS] if at is not None else []
+
+
+def guard(ans: dict, text: str, rule: tuple | None) -> dict:
+    """Code checks on the model's answers, after the target rules. Each one sends a case the model got wrong to the LLM.
+
+    - A group picked by colour ("turn all the yellow notes pink"): a colour answer equal to the filter is the old
+      colour, not the new one, so it loses its confidence.
+    - A command naming a board element by label ("where's the cache, I can't find it") is never ignored as chatter.
+    """
+    ans = dict(ans)
+    if rule and rule[1] == "set" and ans["color"][0] in color_filters(words(text)):
+        ans["color"] = (ans["color"][0], 0.0)
+    if rule and rule[1] in ("label", "label word"):
+        ans["names_element"] = (True, 1.0)
+    return ans
 
 
 def route(ans: dict, threshold: float) -> tuple[str, list[dict] | None]:
@@ -507,15 +657,21 @@ def route_why(ans: dict, threshold: float) -> tuple[str, list[dict] | None, str]
     """`route` plus a short reason for the decision, shown in the app's activity feed."""
     on_board, on_conf = ans["on_board"]
     action, action_conf = ans["action"]
-    if not on_board or action == "none":
-        # Only drop input when both signals agree and are confident; otherwise let the LLM look.
-        if not on_board and action == "none" and on_conf >= threshold and action_conf >= threshold:
+    route_to, route_conf = ans["route"]
+    if not on_board or action == "none" or route_to == "none":
+        # Only drop input when all three signals agree and are confident; otherwise let the LLM look.
+        named = ans.get("names_element", (False, 1.0))[0]
+        if not on_board and action == "none" and route_to == "none" and min(on_conf, action_conf, route_conf) >= threshold and not named:
             return "ignore", None, "not a board command"
         return "llm", None, "unsure whether it's a board command"
     if action not in FAST_ACTIONS:
-        return "llm", None, f"{action} needs the LLM"
+        return "llm", None, "needs the assistant" if action == "other" else f"{action} needs the LLM"
     if action_conf < threshold:
         return "llm", None, f"unsure of the action ({action} {action_conf:.2f})"
+    if route_to != "simple":
+        return "llm", None, "router: needs the assistant"
+    if route_conf < threshold:
+        return "llm", None, f"unsure of the route ({route_conf:.2f})"
     target = ans["target"][0]
     is_set = isinstance(target, list)
     if (is_set or target == SEVERAL) and action not in {"undo_last_command", "clear_board", *(SET_ACTIONS if is_set else ())}:
@@ -527,10 +683,10 @@ def route_why(ans: dict, threshold: float) -> tuple[str, list[dict] | None, str]
             return "llm", None, {"multi_step": "several changes", "needs_text": "needs new text"}[flag]
         if conf < threshold:
             return "llm", None, f"unsure about {flag} ({conf:.2f})"
-    for f in USED_FIELDS[action]:
+    for f in used_fields(ans, action):
         if ans[f][1] < threshold:
             return "llm", None, f"unsure of the {f} ({ans[f][1]:.2f})"
     composed = compose({k: v for k, (v, _) in ans.items()})
     if not composed:
         return "llm", None, "answers don't make a complete action"
-    return "fast", composed, action
+    return "fast", composed, composed[0]["name"] if action == "view" else action

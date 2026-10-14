@@ -430,7 +430,6 @@ def has_motion(cmd: Command) -> bool:
 
 
 SCROLL_VERBS = {"scroll", "pan"}
-SCROLL_WORDS = verb_forms("scroll", "pan") | {"scrolled", "panned", "panning", "camera", "viewport", "canvas", "zoom", "magnify"}
 # Nouns for the view itself: "scroll the page down". Move verbs only take the camera-like ones ("move the view
 # left"); "move the canvas down" could mean dragging it the other way, so it goes to the LLM.
 VIEW_NOUNS = {"view", "screen", "page", "canvas", "board", "camera"}
@@ -558,11 +557,6 @@ def zoom(cmd: Command, scene: dict):
     return [{"name": "zoom_view", "input": inp}], "zoom"
 
 
-def has_scroll(cmd: Command) -> bool:
-    """A scroll or zoom command the templates didn't take. Laya has no scroll_view/zoom_view and would read it as a move."""
-    return bool(SCROLL_WORDS & set(cmd.w))
-
-
 DIAGRAM_WORDS = {"diagram", "diagrams", "flowchart", "flowcharts", "architecture", "workflow", "pipeline", "hierarchy", "mindmap"}
 DIAGRAM_PHRASES = {"flow chart", "org chart", "mind map"}
 
@@ -629,9 +623,8 @@ def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] |
             return "fast", hit[0], f"rule: {hit[1]}"
     if has_motion(cmd):  # Laya has no animate_element: built here or left to the LLM
         return "llm", None, "motion needs the LLM"
-    if has_scroll(cmd):  # Laya has no scroll_view/zoom_view either
-        return "llm", None, "scroll needs the LLM"
-    if has_diagram(cmd):  # nor generate_diagram ("org chart" lands here, not below)
+    # Loose scroll/zoom commands ("can we get a closer look") go on to Laya, which knows views (questions v3).
+    if has_diagram(cmd):  # nor generate_diagram: its "other" answer is a backstop, this stays ("org chart" lands here, not below)
         return "llm", None, "diagram needs the LLM"
     if has_plot(cmd) or edits_chart(cmd, scene):  # nor plot_graph / add_chart
         return "llm", None, "graph needs the LLM"

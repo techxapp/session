@@ -1,0 +1,30 @@
+{"id": 601, "cat": "other", "scene": "empty", "text": "draw a cat", "expect": {"action": "other", "core": "new", "extra": "object"}}
+{"id": 602, "cat": "other", "scene": "arch", "text": "sketch how a request travels from the user to the database", "expect": {"action": "other", "core": "new", "extra": "diagram"}}
+{"id": 603, "cat": "other", "scene": "empty", "text": "lay out the onboarding steps for a new hire", "expect": {"action": "other", "core": "new", "extra": "diagram"}}
+{"id": 604, "cat": "other", "scene": "empty", "text": "show our q1 to q4 revenue as bars", "expect": {"action": "other", "core": "new", "extra": "chart"}}
+{"id": 605, "cat": "other", "scene": "empty", "text": "plot x squared from minus five to five", "expect": {"action": "other", "core": "new", "extra": "graph"}}
+{"id": 606, "cat": "other", "scene": "arch", "text": "put a tree next to the user box", "expect": {"action": "other", "core": "new", "extra": "object"}}
+{"id": 607, "cat": "other", "scene": "empty", "text": "add a little house", "expect": {"action": "other", "core": "new", "extra": "object"}}
+{"id": 608, "cat": "other", "scene": "arch", "text": "make the user walk over to the api gateway", "expect": {"action": "other", "core": "edit", "extra": "motion"}}
+{"id": 609, "cat": "other", "scene": "arch", "text": "the cache is 3 meters wide", "expect": {"action": "other", "core": "new", "extra": "dimension"}}
+{"id": 610, "cat": "other", "scene": "empty", "text": "map out the team structure, me at the top and three engineers below", "expect": {"action": "other", "core": "new", "extra": "diagram"}}
+{"id": 611, "cat": "other", "scene": "empty", "text": "visualize monthly signups: jan 10, feb 25, mar 40", "expect": {"action": "other", "core": "new", "extra": "chart"}}
+{"id": 612, "cat": "other", "scene": "empty", "text": "add a sun in the top corner", "expect": {"action": "other", "core": "new", "extra": "object"}}
+{"id": 613, "cat": "other", "scene": "notes", "text": "draw two dogs", "expect": {"action": "other", "core": "new", "extra": "object"}}
+{"id": 614, "cat": "other", "scene": "flow", "text": "let the start circle slide slowly to the error box", "expect": {"action": "other", "core": "edit", "extra": "motion"}}
+{"id": 615, "cat": "other", "scene": "empty", "text": "build a decision tree for whether to deploy", "expect": {"action": "other", "core": "new", "extra": "diagram"}}
+{"id": 616, "cat": "other", "scene": "empty", "text": "graph the cosine", "expect": {"action": "other", "core": "new", "extra": "graph"}}
+{"id": 617, "cat": "assist", "scene": "arch", "text": "add a box called payments and connect it to postgres", "expect": {"action": "add_shape", "kind": "rectangle", "multi_step": true, "needs_text": true, "core": "mixed", "extra": "none"}}
+{"id": 618, "cat": "assist", "scene": "notes", "text": "write retro notes at the top", "expect": {"action": "add_text", "needs_text": true, "core": "new", "extra": "none"}}
+{"id": 619, "cat": "chatter", "scene": "arch", "text": "sorry, I was talking to my kid", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 620, "cat": "chatter", "scene": "notes", "text": "the cat walked across my keyboard", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 621, "cat": "chatter", "scene": "flow", "text": "we drew this diagram last sprint", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 622, "cat": "chatter", "scene": "arch", "text": "can you see the chart I sent", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 623, "cat": "chatter", "scene": "empty", "text": "let's draw straws to decide", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 624, "cat": "chatter", "scene": "arch", "text": "my zoom keeps freezing", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 625, "cat": "chatter", "scene": "notes", "text": "I'll move the meeting to friday", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 626, "cat": "other", "scene": "empty", "text": "can you draw me a bicycle", "expect": {"action": "other", "core": "new", "extra": "object"}}
+{"id": 627, "cat": "assist", "scene": "flow", "text": "connect the error box back to start with a dashed line", "expect": {"action": "add_arrow", "core": "connect", "extra": "none"}}
+{"id": 628, "cat": "other", "scene": "flow", "text": "turn this into a sequence diagram", "expect": {"action": "other", "core": "new", "extra": "diagram"}}
+{"id": 629, "cat": "other", "scene": "empty", "text": "I need a picture of a rocket", "expect": {"action": "other", "core": "new", "extra": "object"}}
+{"id": 630, "cat": "other", "scene": "notes", "text": "bring a coffee cup onto the board", "expect": {"action": "other", "core": "new", "extra": "object"}}

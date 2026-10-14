@@ -1,0 +1,40 @@
+{"id": 501, "cat": "view", "scene": "arch", "text": "can we get a closer look", "expect": {"action": "view", "view": "in", "core": "none", "extra": "scroll"}}
+{"id": 502, "cat": "view", "scene": "arch", "text": "back up a little, I want to see more", "expect": {"action": "view", "view": "out", "core": "none", "extra": "scroll"}}
+{"id": 503, "cat": "view", "scene": "arch", "text": "take me over to the postgres one", "expect": {"action": "view", "view": "element", "target": "db", "core": "none", "extra": "scroll"}}
+{"id": 504, "cat": "view", "scene": "arch", "text": "where's the cache, I can't find it", "expect": {"action": "view", "view": "element", "target": "cache", "core": "none", "extra": "scroll"}}
+{"id": 505, "cat": "view", "scene": "notes", "text": "bring the whole thing into view", "expect": {"action": "view", "view": "fit", "core": "none", "extra": "scroll"}}
+{"id": 506, "cat": "view", "scene": "flow", "text": "everything in one screen please", "expect": {"action": "view", "view": "fit", "core": "none", "extra": "scroll"}}
+{"id": 507, "cat": "view", "scene": "arch", "text": "make everything look bigger on screen", "expect": {"action": "view", "view": "in", "core": "none", "extra": "scroll"}}
+{"id": 508, "cat": "view", "scene": "notes", "text": "head down a bit", "expect": {"action": "view", "view": "direction", "direction": "down", "core": "none", "extra": "scroll"}}
+{"id": 509, "cat": "view", "scene": "flow", "text": "show me what's further to the right", "expect": {"action": "view", "view": "direction", "direction": "right", "core": "none", "extra": "scroll"}}
+{"id": 510, "cat": "view", "scene": "arch", "text": "jump to the very bottom", "expect": {"action": "view", "view": "edge", "direction": "down", "core": "none", "extra": "scroll"}}
+{"id": 511, "cat": "view", "scene": "notes", "text": "make the zoom level 200%", "expect": {"action": "view", "view": "level", "core": "none", "extra": "scroll"}}
+{"id": 512, "cat": "view", "scene": "arch", "text": "put the zoom back to normal", "expect": {"action": "view", "view": "level", "core": "none", "extra": "scroll"}}
+{"id": 513, "cat": "view", "scene": "arch", "text": "get closer to the api gateway", "expect": {"action": "view", "view": "in", "target": "api", "core": "none", "extra": "scroll"}}
+{"id": 514, "cat": "view", "scene": "notes", "text": "focus the camera on the login bug note", "expect": {"action": "view", "view": "element", "target": "s3", "core": "none", "extra": "scroll"}}
+{"id": 515, "cat": "view", "scene": "flow", "text": "pull back, I'm too close", "expect": {"action": "view", "view": "out", "core": "none", "extra": "scroll"}}
+{"id": 516, "cat": "view", "scene": "arch", "text": "drag the view over to the left a bit", "expect": {"action": "view", "view": "direction", "direction": "left", "core": "none", "extra": "scroll"}}
+{"id": 517, "cat": "view", "scene": "flow", "text": "can you center the screen on start", "expect": {"action": "view", "view": "element", "target": "start", "core": "none", "extra": "scroll"}}
+{"id": 518, "cat": "view", "scene": "flow", "text": "let's look at the error box", "expect": {"action": "view", "view": "element", "target": "err", "core": "none", "extra": "scroll"}}
+{"id": 519, "cat": "view", "scene": "arch", "text": "zoom way out", "expect": {"action": "view", "view": "out", "core": "none", "extra": "scroll"}}
+{"id": 520, "cat": "view", "scene": "flow", "text": "magnify the decision diamond", "expect": {"action": "view", "view": "in", "target": "check", "core": "none", "extra": "scroll"}}
+{"id": 521, "cat": "view", "scene": "notes", "text": "move the camera up", "expect": {"action": "view", "view": "direction", "direction": "up", "core": "none", "extra": "scroll"}}
+{"id": 522, "cat": "view", "scene": "arch", "text": "go all the way to the right side", "expect": {"action": "view", "view": "edge", "direction": "right", "core": "none", "extra": "scroll"}}
+{"id": 523, "cat": "view", "scene": "notes", "text": "take a step back so we can see everything", "expect": {"action": "view", "view": "fit", "core": "none", "extra": "scroll"}}
+{"id": 524, "cat": "view", "scene": "empty", "text": "zoom in a touch", "expect": {"action": "view", "view": "in", "core": "none", "extra": "scroll"}}
+{"id": 525, "cat": "view", "scene": "arch_sel", "text": "zoom in on that", "expect": {"action": "view", "view": "in", "target": "cache", "core": "none", "extra": "scroll"}}
+{"id": 526, "cat": "view", "scene": "notes", "text": "find the milk note for me", "expect": {"action": "view", "view": "element", "target": "s1", "core": "none", "extra": "scroll"}}
+{"id": 527, "cat": "view", "scene": "flow", "text": "scroll up a little", "expect": {"action": "view", "view": "direction", "direction": "up", "core": "none", "extra": "scroll"}}
+{"id": 528, "cat": "view", "scene": "arch", "text": "can you take us back to the start of the board", "expect": {"action": "view", "view": "edge", "direction": "up", "core": "none", "extra": "scroll"}}
+{"id": 529, "cat": "view", "scene": "notes", "text": "i want 150 percent zoom", "expect": {"action": "view", "view": "level", "core": "none", "extra": "scroll"}}
+{"id": 530, "cat": "view", "scene": "flow", "text": "show the top of the board", "expect": {"action": "view", "view": "edge", "direction": "up", "core": "none", "extra": "scroll"}}
+{"id": 531, "cat": "view_miss", "scene": "arch", "text": "can you share your screen", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 532, "cat": "view_miss", "scene": "notes", "text": "scroll up in the chat to find the link", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 533, "cat": "view_miss", "scene": "arch", "text": "we'll do a zoom call tomorrow", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 534, "cat": "view_miss", "scene": "arch", "text": "make the cache box bigger", "expect": {"action": "update_element", "target": "cache", "size": "large", "core": "edit", "extra": "none"}}
+{"id": 535, "cat": "view_miss", "scene": "arch", "text": "move the user box left", "expect": {"action": "move_element", "target": "user", "direction": "left", "core": "edit", "extra": "none"}}
+{"id": 536, "cat": "view_miss", "scene": "notes", "text": "move the title up", "expect": {"action": "move_element", "target": "title", "direction": "up", "core": "edit", "extra": "none"}}
+{"id": 537, "cat": "view_miss", "scene": "arch", "text": "I can't see the screen from here", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 538, "cat": "view_miss", "scene": "arch", "text": "make postgres zoom over to the cache", "expect": {"action": "other", "core": "edit", "extra": "motion"}}
+{"id": 539, "cat": "view_miss", "scene": "flow", "text": "go to the next slide", "expect": {"action": "none", "core": "none", "extra": "none"}}
+{"id": 540, "cat": "view_miss", "scene": "notes", "text": "let's go back to the top of the agenda", "expect": {"action": "none", "core": "none", "extra": "none"}}

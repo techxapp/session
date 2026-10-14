@@ -15,7 +15,16 @@ import {
 import { DEFAULT_EFFORT, anthropicSupportsEffort, type ReasoningEffort } from "./effort";
 import { DEFAULT_OBJECT_MODE, parseToolCall, type ObjectMode } from "./objects";
 import { buildUserMessage, promptFor } from "./prompt";
-import { CORE_TOOLS, DEFAULT_TOOL_ROUTER, GROUP_TOOLS, TOOL_GROUPS, groupsFor, groupsLabel, type ToolGroup } from "./toolRouter";
+import {
+  BASE_TOOLS,
+  DEFAULT_TOOL_ROUTER,
+  GROUP_TOOLS,
+  TOOL_GROUPS,
+  groupsFor,
+  groupsLabel,
+  type ToolGroup,
+  type ToolHint,
+} from "./toolRouter";
 
 export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5";
 
@@ -43,9 +52,9 @@ const buildTools = (objects: ObjectMode, names: readonly ActionName[] = ACTION_N
 export const TOOLS_BY_MODE: Record<ObjectMode, Anthropic.Tool[]> = { enum: buildTools("enum"), text: buildTools("text") };
 export const TOOLS = TOOLS_BY_MODE.enum;
 
-/** Tool names for a set of groups: the core tools plus the groups', in ACTION_NAMES order. */
+/** Tool names for a set of groups: the base tools plus the groups', in ACTION_NAMES order. */
 export function toolNamesFor(groups: readonly ToolGroup[]): ActionName[] {
-  const names = new Set<ActionName>([...CORE_TOOLS, ...groups.flatMap((g) => GROUP_TOOLS[g])]);
+  const names = new Set<ActionName>([...BASE_TOOLS, ...groups.flatMap((g) => GROUP_TOOLS[g])]);
   return ACTION_NAMES.filter((n) => names.has(n));
 }
 
@@ -87,10 +96,11 @@ export async function runSystem1(
   effort: ReasoningEffort = DEFAULT_EFFORT,
   objects: ObjectMode = DEFAULT_OBJECT_MODE,
   router: ToolRouterMode = DEFAULT_TOOL_ROUTER,
+  hint?: ToolHint,
 ) {
   const startedAt = Date.now();
   let count = 0;
-  const groups = groupsFor(router, req.text, req.scene);
+  const groups = groupsFor(router, req.text, req.scene, hint);
 
   const stream = client.messages.stream(
     {

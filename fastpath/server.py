@@ -1,7 +1,8 @@
 """
 Fast-path sidecar: answers "can this command skip the LLM?" with code rules, then a fine-tuned Laya checkpoint.
 
-POST /decide {text, scene}  ->  {route: "fast" | "ignore" | "llm", actions: [{name, input}] | null, reason, model, ms, ...}
+POST /decide {text, scene}  ->  {route: "fast" | "ignore" | "llm", actions: [{name, input}] | null, reason, model, ms,
+                                 tools?: {core: [group] | null}, ...}
 GET  /health                ->  {ok, model, threshold, device, awake}
 
 The Node server (server/src/fastpath.ts) calls /decide before the LLM: "fast" actions are streamed to the board
@@ -17,7 +18,9 @@ Env: LAYA_CHECKPOINT (fine-tuned checkpoint dir; unset = rules only), FASTPATH_P
      FASTPATH_THRESHOLD (0.8: no wrong actions on any eval set), LAYA_DEVICE (cuda / cpu, default Laya's choice),
      FASTPATH_KEEP_WARM_S (5; a tiny decision after this many idle seconds keeps the GPU clocked up; 0 disables),
      FASTPATH_IDLE_UNLOAD_S (900; with no /decide request for this long the model is unloaded from the GPU and
-     keep-warm stops; the next request wakes it in the background and is answered by the LLM; 0 disables).
+     keep-warm stops; the next request wakes it in the background and is answered by the LLM; 0 disables),
+     FASTPATH_TOOLS_THRESHOLD (0.97; confidence for the `tools` hint: which core tool groups the cloud model gets;
+     at 0.9 one of 70 eval commands would have lost its drawing tools).
 """
 
 from __future__ import annotations
@@ -32,13 +35,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastpath.decide import (  # noqa: E402
+    QUESTIONS_FILE,
+    QUESTIONS_VERSION,
     build_questions,
+    code_answers,
     draws_object,
+    guard,
     object_command,
     parse_answers,
     resolve_target,
     route_object,
     route_why,
+    tool_hint,
     words,
 )
 from fastpath.rules import rule_command  # noqa: E402
@@ -99,8 +107,9 @@ def unalias(actions: list[dict], back: dict[str, str]) -> list[dict]:
     out = []
     for a in actions:
         inp = dict(a["input"])
-        if "target" in inp:
-            inp["target"] = back[inp["target"]]
+        for key in ("target", "to", "on"):  # update/move, scroll_view, zoom_view
+            if key in inp:
+                inp[key] = back[inp[key]]
         if "targets" in inp:
             inp["targets"] = [back[t] for t in inp["targets"]]
         out.append({"name": a["name"], "input": inp})
@@ -109,11 +118,14 @@ def unalias(actions: list[dict], back: dict[str, str]) -> list[dict]:
 
 class FastPath:
     def __init__(
-        self, checkpoint: str, threshold: float, device: str | None, keep_warm_s: float = 5.0, idle_unload_s: float = 900.0
+        self, checkpoint: str, threshold: float, device: str | None, keep_warm_s: float = 5.0, idle_unload_s: float = 900.0,
+        tools_threshold: float = 0.97,
     ):
         import laya
 
         self.checkpoint, self.threshold, self.device = checkpoint, threshold, device
+        # A wrong tool hint can leave the cloud model without a tool it needs, so it takes more confidence than a fast action.
+        self.tools_threshold = tools_threshold
         self.name = f"laya:{Path(checkpoint).name}"
         self.router = laya.Router(device=device, default="english")
         self.model = self.router.register("tuned", checkpoint)
@@ -192,12 +204,13 @@ class FastPath:
                 return {"route": "llm", "actions": None, "reason": "fast path waking up", "model": self.name, "ms": 0}
             raw = self.router.predict({"command": text}, questions, model=self.model)
             self.last_call = time.monotonic()
-        ans = parse_answers(raw)
+        ans = {**parse_answers(raw), **code_answers(text)}
         if "target" not in questions:
             ans["target"] = ("none", 0.0)  # unknown, not confidently "none"
         rule = resolve_target(text, aliased)
         if rule:
             ans["target"] = (rule[0], 1.0)
+        ans = guard(ans, text, rule)
         decision, actions, why = route_why(ans, self.threshold)
         if obj:  # casual "let's grab a tree": fast only if the model agrees it's a board command
             decision, actions, why = route_object(obj, ans, self.threshold)
@@ -208,6 +221,7 @@ class FastPath:
             "actions": unalias(actions, back) if actions else None,
             "reason": why,
             "model": self.name,
+            "tools": tool_hint(ans, self.tools_threshold),
             "answers": {k: [v, round(c, 3)] for k, (v, c) in ans.items()},
             "target_rule": rule[1] if rule else None,
             "ms": round((time.perf_counter() - t) * 1000, 1),
@@ -263,12 +277,20 @@ def main() -> None:
         return
     if not Path(checkpoint, "rl_agent_config.json").exists():
         sys.exit("LAYA_CHECKPOINT must be a fine-tuned Laya checkpoint dir (one with rl_agent_config.json).")
+    marker = Path(checkpoint, QUESTIONS_FILE)
+    trained_on = json.loads(marker.read_text())["questions"] if marker.exists() else 2
+    if trained_on != QUESTIONS_VERSION:
+        sys.exit(
+            f"{Path(checkpoint).name} was trained on questions v{trained_on}, but fastpath/decide.py asks v{QUESTIONS_VERSION}. "
+            "Retrain it (eval/make_train.py + eval/train_laya.py) or run rules only (unset LAYA_CHECKPOINT)."
+        )
     fast = FastPath(
         checkpoint,
         float(os.environ.get("FASTPATH_THRESHOLD", 0.8)),
         os.environ.get("LAYA_DEVICE") or None,
         float(os.environ.get("FASTPATH_KEEP_WARM_S", 5)),
         float(os.environ.get("FASTPATH_IDLE_UNLOAD_S", 900)),
+        float(os.environ.get("FASTPATH_TOOLS_THRESHOLD", 0.97)),
     )
     print(f"fast path ready on http://{host}:{port} (checkpoint {Path(checkpoint).name}, threshold {fast.threshold})", flush=True)
     ThreadingHTTPServer((host, port), handler_for(fast)).serve_forever()

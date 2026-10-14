@@ -1,6 +1,7 @@
 import { parseAction, type BoardAction, type CommandRequest } from "@board/shared";
 import type { Emit } from "./system1";
 import type { Provider } from "./provider";
+import type { ToolHint } from "./toolRouter";
 
 /** The local decision model's answer for one command (fastpath/server.py `POST /decide`). */
 export interface FastDecision {
@@ -10,6 +11,8 @@ export interface FastDecision {
   reason?: string;
   model?: string;
   ms?: number;
+  /** Which tool groups the cloud model needs, for an "llm" answer (fastpath/decide.py tool_hint). */
+  tools?: ToolHint;
 }
 
 export type FastPath = (req: CommandRequest, signal?: AbortSignal) => Promise<FastDecision>;
@@ -73,7 +76,7 @@ export function withFastPath(provider: Provider, fast: FastPath, onError?: (err:
           ? "local actions failed validation"
           : `local model passed: ${decision.reason ?? "not a simple command"}`;
       emit({ type: "route", source: "cloud", model: provider.model, detail: `Sent to the cloud (${why})`, ms, objects: provider.objects });
-      return provider.run(req, emit, signal);
+      return provider.run(req, emit, signal, { toolHint: decision?.tools });
     },
   };
 }

@@ -64,8 +64,8 @@ describe("settings -> speech config", () => {
     });
   });
 
-  it("pauses after 30 s of silence unless set otherwise, and wakes at the chosen level", () => {
-    expect(speechConfig(DEFAULT_SETTINGS, health)).toMatchObject({ idleMs: 30_000 });
+  it("pauses after 10 s of silence unless set otherwise, and wakes at the chosen level", () => {
+    expect(speechConfig(DEFAULT_SETTINGS, health)).toMatchObject({ idleMs: 10_000 });
     expect(speechConfig(DEFAULT_SETTINGS, health).wakeRms).toBeCloseTo(10 ** (-42 / 20));
     const s = with_({ speech: { keys: {}, idleSeconds: 0, wake: "high" } });
     expect(speechConfig(s, health)).toMatchObject({ idleMs: 0, wakeRms: 10 ** (-50 / 20) });

@@ -180,7 +180,8 @@ class Scroll(unittest.TestCase):
                 got = rule_command(text, SCENE)
                 self.assertEqual(got and got[:2], ("fast", want))
 
-    def test_needs_llm(self):
+    def test_left_to_laya(self):
+        """No template fits, so the rules pass them on (Laya knows views; RulesOnly then answers llm)."""
         for text in [
             "scroll down and add a box",
             "scroll the api down",
@@ -190,7 +191,7 @@ class Scroll(unittest.TestCase):
             "move the camera somewhere else",
         ]:
             with self.subTest(text):
-                self.assertEqual(rule_command(text, SCENE)[:2], ("llm", None))
+                self.assertIsNone(rule_command(text, SCENE))
 
     def test_not_scroll(self):
         self.assertEqual(actions("move the cache down"), [{"name": "move_element", "input": {"target": "cache", "direction": "down"}}])
@@ -228,7 +229,8 @@ class Zoom(unittest.TestCase):
                 got = rule_command(text, SCENE)
                 self.assertEqual(got and got[:2], ("fast", want))
 
-    def test_needs_llm(self):
+    def test_not_answered(self):
+        """Left to Laya (None) or the LLM: "zoom ... to" also trips the motion guard ("zooms to the house")."""
         for text in [
             "zoom in and add a box",
             "zoom in on the database",  # a synonym
@@ -239,7 +241,8 @@ class Zoom(unittest.TestCase):
             "zoom to 1.5x",
         ]:
             with self.subTest(text):
-                self.assertEqual(rule_command(text, SCENE)[:2], ("llm", None))
+                got = rule_command(text, SCENE)
+                self.assertTrue(got is None or got[:2] == ("llm", None), got)
 
     def test_still_scroll_or_motion(self):
         self.assertEqual(actions("zoom to fit"), [{"name": "scroll_view", "input": {"fit": "all"}}])

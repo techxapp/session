@@ -18,6 +18,7 @@ import {
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
 import { TOOLS, TOOLS_BY_MODE, blockToEvents, toolsFor, usageOf } from "./system1";
 import { OPENAI_TOOLS, OPENAI_TOOLS_BY_MODE, addUsage, looksMultiStep, openaiToolsFor, toolCallToEvent } from "./system1-openai";
+import { CORE_GROUPS } from "./toolRouter";
 
 const scene: CommandRequest["scene"] = {
   elements: [{ id: "api", type: "rectangle", label: "API", x: 10, y: 20, w: 180, h: 84 }],
@@ -204,7 +205,7 @@ describe("POST /api/command", () => {
     const events = parseSse(res.body);
     expect(events[1]).toMatchObject({ action: { name: "add_object", input: { id: "pup", object: "dog" } } });
     expect(events[2]).toMatchObject({ action: { name: "add_shape", input: { id: "tower", kind: "rectangle", label: "skyscraper" } } });
-    expect((calls[0] as { tools: unknown }).tools).toBe(toolsFor(["object"], "text"));
+    expect((calls[0] as { tools: unknown }).tools).toBe(toolsFor([...CORE_GROUPS, "object"], "text"));
   });
 
   it("routes tools: core only for a plain command, plus the groups a command needs, or all of them", async () => {
@@ -369,7 +370,7 @@ describe("POST /api/command (OpenAI)", () => {
       payload: { text: "scroll down and add a box", scene },
     });
     const tools = (calls[0] as { tools: OpenAI.Chat.Completions.ChatCompletionFunctionTool[] }).tools;
-    expect(tools).toBe(openaiToolsFor(["scroll"]));
+    expect(tools).toBe(openaiToolsFor([...CORE_GROUPS, "scroll"]));
     expect(calls[0]).toMatchObject({ stream_options: { include_usage: true } });
     expect(tools.map((t) => t.function.name)).toContain("scroll_view");
     expect(tools.map((t) => t.function.name)).not.toContain("add_chart");
@@ -700,6 +701,15 @@ describe("fast path", () => {
     expect(events.map((e) => e.type)).toEqual(["route", "action", "done"]);
     expect(events[0]).toMatchObject({ source: "cloud", model: "claude-haiku-4-5", detail: expect.stringContaining("needs new text") });
     expect(calls).toHaveLength(1);
+  });
+
+  it("sends the cloud model only the tool groups the local model named", async () => {
+    const { client, calls } = fakeClient([toolUse("update_element", { target: "api", color: "red" })]);
+    const hinted = decide({ route: "llm", actions: null, tools: { core: ["edit"] } });
+    const events = await command(withFastPath(anthropicProvider(client), hinted));
+    const sent = (calls[0] as { tools: { name: string }[] }).tools.map((t) => t.name);
+    expect(sent).toEqual(["move_element", "update_element", "delete_elements", "undo_last_command", "clear_board"]);
+    expect(events.at(-1)).toMatchObject({ type: "done", tools: ["edit"] });
   });
 
   it("uses the cloud model when the sidecar fails or sends an invalid action", async () => {

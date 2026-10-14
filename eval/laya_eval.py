@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).parent
+TOOLS_THRESHOLD = 0.97  # fastpath/server.py FASTPATH_TOOLS_THRESHOLD
 
 # The decision logic lives in fastpath/decide.py, shared with the app's sidecar; names are re-exported for the
 # other eval scripts.
@@ -39,9 +40,13 @@ sys.path.insert(0, str(HERE.parent))
 from fastpath.decide import (  # noqa: E402, F401
     COLORS,
     FIELDS,
+    QUESTIONS_FILE,
+    QUESTIONS_VERSION,
     SEVERAL,
     build_questions,
+    code_answers,
     format_scene,
+    guard,
     parse_answers,
     resolve_target,
     route,
@@ -50,15 +55,20 @@ from fastpath.decide import (  # noqa: E402, F401
 
 
 def expected_of(sample: dict) -> dict:
-    e = {"target": "none", "color": "none", "kind": "none", "size": "none", "direction": "none", "multi_step": False, "needs_text": False}
+    """Expected answers; `route` defaults to what the other answers imply (simple when code could build them alone)."""
+    e = {"target": "none", "color": "none", "kind": "none", "size": "none", "direction": "none", "view": "none",
+         "multi_step": False, "needs_text": False}  # fmt: skip
     e.update(sample["expect"])
     e["on_board"] = e["action"] != "none"
+    if "route" not in e:
+        simple = route({**{k: (v, 1.0) for k, v in e.items()}, "route": ("simple", 1.0), **code_answers(sample["text"])}, 1.0)
+        e["route"] = "none" if e["action"] == "none" else "simple" if simple[0] == "fast" else "assistant"
     return e
 
 
-def expected_route(e: dict) -> tuple[str, list[dict] | None]:
+def expected_route(e: dict, text: str) -> tuple[str, list[dict] | None]:
     """The router's decision if every answer were the expected one, fully confident."""
-    return route({k: (v, 1.0) for k, v in e.items()}, 1.0)
+    return route({**{k: (v, 1.0) for k, v in e.items()}, **code_answers(text)}, 1.0)
 
 
 def main() -> None:
@@ -144,14 +154,16 @@ def run_samples(answer, scenes: dict, samples: list[dict], args) -> list[dict]:
             state["board"] = format_scene(scene)
         t = time.perf_counter()
         ans, input_tokens = answer(state, build_questions(scene))
+        ans.update(code_answers(s["text"]))
         model_target = ans["target"]
         rule = resolve_target(s["text"], scene) if args.target_rules else None
         if rule:
             ans["target"] = (rule[0], 1.0)
+        ans = guard(ans, s["text"], rule)
         ms = (time.perf_counter() - t) * 1000
         got_route, got_action = route(ans, args.threshold)
         exp = expected_of(s)
-        exp_route, exp_action = expected_route(exp)
+        exp_route, exp_action = expected_route(exp, s["text"])
         rows.append(
             {
                 "id": s["id"],
@@ -195,7 +207,7 @@ def report(rows: list[dict], args, load_s: float, peak_mb: int | None) -> None:
     print("\nPer-question accuracy (argmax, ignoring confidence):")
     for f in ["on_board", *FIELDS]:
         # Score a field on fast-path samples (where every field matters) and wherever the sample states it.
-        scored = [r for r in rows if r["expected_route"] == "fast" or f in ("on_board", "action", "multi_step", "needs_text") or f in r["expected"] and r["expected"][f] != "none"]
+        scored = [r for r in rows if f in r["expected"] and (r["expected_route"] == "fast" or f in ("on_board", "route", "action", "multi_step", "needs_text", "core", "extra") or r["expected"][f] != "none")]
         if f == "target":
             scored = [r for r in scored if "target" in r["answers"] or r["expected"]["target"] != "none"]
         ok = sum(r["answers"].get(f, ["none"])[0] == r["expected"][f] for r in scored)
@@ -210,6 +222,16 @@ def report(rows: list[dict], args, load_s: float, peak_mb: int | None) -> None:
         print(f"  one named element: rule right {sum(r['answers']['target'][0] == r['expected']['target'] for r in single)}/{len(single)}, model right {sum(r['model_target'][0] == r['expected']['target'] for r in single)}/{len(single)}")
         if sets:
             print(f"  groups of elements: rule right {sum(r['answers']['target'][0] == r['expected']['target'] for r in sets)}/{len(sets)}")
+
+    hinted = [r for r in rows if "core" in r["expected"]]
+    if hinted:
+        print(f"\nTool hint for the cloud (confident answers at {TOOLS_THRESHOLD}; a wrong one leaves the model without a tool):")
+        for f in ("core",):
+            sure = [r for r in hinted if r["answers"][f][1] >= TOOLS_THRESHOLD]
+            wrong = [r for r in sure if r["answers"][f][0] != r["expected"][f]]
+            print(f"  {f:<6} confident on {pct(len(sure), len(hinted))}, wrong {len(wrong)}")
+            for r in wrong:
+                print(f"    #{r['id']} {r['text']!r}: {r['answers'][f][0]} ({r['answers'][f][1]:.2f}), expected {r['expected'][f]}")
 
     fast = [r for r in rows if r["route"] == "fast"]
     exp_fast = [r for r in rows if r["expected_route"] == "fast"]
