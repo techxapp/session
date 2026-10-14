@@ -58,7 +58,8 @@ export default function App() {
   const latest = useRef({ settings, health });
   latest.current = { settings, health };
   const getConfig = useCallback(() => requestConfig(latest.current.settings, latest.current.health ?? null), []);
-  const runner = useCommandRunner(api, getConfig);
+  const getAutoCenter = useCallback(() => latest.current.settings.autoCenter, []);
+  const runner = useCommandRunner(api, getConfig, getAutoCenter);
 
   // Spoken commands run in order: a new line waits for the command in flight instead of cancelling it (typing still barges in).
   const runRef = useRef(runner.run);

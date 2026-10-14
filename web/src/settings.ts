@@ -67,6 +67,8 @@ export interface Settings {
   /** Keyed by SERVER or endpointKey(provider, baseUrl). */
   profiles: Record<string, Profile>;
   speech: SpeechSettings;
+  /** Glide the view to centre whatever a command just created or changed (default on). Off: only bring it in if it landed out of sight. */
+  autoCenter: boolean;
 }
 
 /** Speech-to-text choice; the provider defaults to the server's STT_PROVIDER, each cloud key to its .env key. */
@@ -95,7 +97,7 @@ export interface SpeechConfig {
 }
 
 const STORAGE_KEY = "voice-board:settings:v1";
-export const DEFAULT_SETTINGS: Settings = { active: SERVER, customUrls: [], profiles: {}, speech: { keys: {} } };
+export const DEFAULT_SETTINGS: Settings = { active: SERVER, customUrls: [], profiles: {}, speech: { keys: {} }, autoCenter: true };
 
 export function loadSettings(): Settings {
   try {

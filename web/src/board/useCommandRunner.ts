@@ -28,8 +28,15 @@ export interface LogEntry {
 
 type Snapshot = readonly ExcalidrawElement[];
 
-/** `getConfig` returns the Settings panel's model config for each command (undefined = the server's .env). */
-export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig: () => ModelConfig | undefined = () => undefined) {
+/**
+ * `getConfig` returns the Settings panel's model config for each command (undefined = the server's .env).
+ * `getAutoCenter` says whether to glide the view to the last created/changed element after a command (code only, no model).
+ */
+export function useCommandRunner(
+  api: ExcalidrawImperativeAPI | null,
+  getConfig: () => ModelConfig | undefined = () => undefined,
+  getAutoCenter: () => boolean = () => false,
+) {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [running, setRunning] = useState(false);
   const recentIds = useRef<string[]>([]);
@@ -77,6 +84,7 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
       const snapshot = api.getSceneElementsIncludingDeleted();
       const ctx = { viewport: visibleArea(api.getAppState()), recentIds: recentIds.current, idMap: new Map<string, string>() };
       const touched: string[] = [];
+      let lastTouched: string[] = []; // what the last board-changing action created or changed
       let applied = 0;
       let changed = 0; // applied actions that changed the board (scrolling doesn't)
       let scrolled = false;
@@ -112,6 +120,7 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
               if (ev.action.name === "add_object") void loadObjectFiles(api);
               else void loadPlotFiles(api); // new or changed graphs/charts (cheap scan otherwise)
               touched.push(...res.touched);
+              if (res.touched.length) lastTouched = res.touched;
               applied++;
               changed++;
               const warns = (res.warnings ?? []).map((text) => ({ kind: "warn" as const, text }));
@@ -158,9 +167,13 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
       update(id, (e) => ({ ...e, status }));
       if (inflight.current === controller) inflight.current = null;
       if (!inflight.current) setRunning(false);
-      if (touched.length && !scrolled) revealIfHidden(api, touched); // after a scroll, the user chose the view
+      if (touched.length && !scrolled) {
+        // After a scroll, the user chose the view.
+        if (getAutoCenter() && !controller.signal.aborted) await centerOn(api, lastTouched, controller.signal);
+        else revealIfHidden(api, touched);
+      }
     },
-    [api, undo],
+    [api, undo, getAutoCenter],
   );
 
   const run = useCallback(
@@ -199,6 +212,12 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
   }, []);
 
   return { log, running, run, cancel, consume, applyActions, undo };
+}
+
+/** Glide the view so `ids` sit in the middle of the free screen area; keeps the zoom unless they can't fit. */
+async function centerOn(api: ExcalidrawImperativeAPI, ids: string[], signal: AbortSignal) {
+  const box = boundsOf(api.getSceneElements().filter((e) => ids.includes(e.id)));
+  if (box) await playScroll(api, frame(api.getAppState(), box), signal);
 }
 
 /**

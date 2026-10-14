@@ -30,6 +30,7 @@ The gear button next to the status pill opens **Model settings**. They are saved
 - **API key**: per provider. If `.env` already has a key for that endpoint, leave it empty and the server's key is used. The server only sends its `.env` keys to the endpoint `.env` configures them for, never to another URL.
 - **Model**: pick from the list (loaded from the provider's `/models` with the refresh button, or automatically the first time) or choose *Other…* to type an id.
 - **Reasoning effort** and **Objects** (`enum` / `text`): the same as `REASONING_EFFORT` and `OBJECT_MODE` below.
+- **Auto-centre view on new items** (On / Off, default On): after a command, the canvas glides so the last item it created or changed sits in the middle of the free screen area (the zoom only drops if the item doesn't fit). Plain code, no model call. Off: the view only moves when something lands out of sight.
 
 Keys typed here are stored in plain text in this browser's localStorage and sent to this app's server with each command. That's fine for a local app; don't use it on a shared machine or a public deployment. On a public server, anyone could also use it to send requests to any URL.
 

@@ -262,6 +262,28 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
         </div>
 
         <div className="field">
+          <span className="field-label">Auto-centre view on new items</span>
+          <div className="segmented" role="radiogroup">
+            {[
+              { on: true, label: "On", title: "Slide the canvas so the last created or changed item is centred" },
+              { on: false, label: "Off", title: "Only move the view when new items land out of sight" },
+            ].map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                role="radio"
+                aria-checked={settings.autoCenter === o.on}
+                className={settings.autoCenter === o.on ? "is-checked" : ""}
+                onClick={() => update((s) => ({ ...s, autoCenter: o.on }))}
+                title={o.title}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
           <span className="field-label">Speech to text</span>
           <Segmented
             value={settings.speech.provider}
