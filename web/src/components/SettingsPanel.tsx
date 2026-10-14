@@ -51,9 +51,9 @@ const SPEECH: { value: SttProvider; label: string; title: string }[] = [
   },
 ];
 const IDLE: { value: string; label: string }[] = [
+  { value: "5", label: "5 s" },
   { value: "15", label: "15 s" },
-  { value: "60", label: "1 min" },
-  { value: "120", label: "2 min" },
+  { value: "30", label: "30 s" },
   { value: "0", label: "Never" },
 ];
 const WAKE: { value: WakeSensitivity; label: string; title: string }[] = [

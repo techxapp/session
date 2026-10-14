@@ -85,7 +85,7 @@ export interface SpeechSettings {
 }
 
 export type WakeSensitivity = "high" | "normal" | "low";
-export const IDLE_SECONDS = 30;
+export const IDLE_SECONDS = 10;
 /** RMS level (dBFS) of a ~100 ms mic frame that counts as someone speaking, after the browser's noise suppression. */
 export const WAKE_DBFS: Record<WakeSensitivity, number> = { high: -50, normal: -42, low: -34 };
 
