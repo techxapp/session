@@ -9,7 +9,7 @@ import { ActionError, applyAction } from "./executor";
 import { loadObjectFiles } from "./objects";
 import { loadPlotFiles } from "./plots";
 import { summarize, visibleArea } from "./summary";
-import { AUTO_CENTER_ANCHOR_Y, boundsOf, frame, isInSafeArea, planScroll, playScroll } from "./view";
+import { AUTO_CENTER_ANCHOR_Y, boundsOf, frame, isInSafeArea, planScroll, planZoom, playScroll } from "./view";
 
 export type EntryStatus = "running" | "done" | "error" | "ignored" | "cancelled";
 
@@ -88,7 +88,7 @@ export function useCommandRunner(
       const touched: string[] = [];
       let lastTouched: string[] = []; // what the last board-changing action created or changed
       let applied = 0;
-      let changed = 0; // applied actions that changed the board (scrolling doesn't)
+      let changed = 0; // applied actions that changed the board (scrolling/zooming don't)
       let scrolled = false;
       let undid = false;
       let failed = false;
@@ -105,8 +105,10 @@ export function useCommandRunner(
               continue;
             }
             try {
-              if (ev.action.name === "scroll_view") {
-                const target = planScroll(api.getSceneElements(), api.getAppState(), ev.action.input, ctx);
+              if (ev.action.name === "scroll_view" || ev.action.name === "zoom_view") {
+                const [els, st] = [api.getSceneElements(), api.getAppState()];
+                const target =
+                  ev.action.name === "scroll_view" ? planScroll(els, st, ev.action.input, ctx) : planZoom(els, st, ev.action.input, ctx);
                 await playScroll(api, target, controller.signal);
                 ctx.viewport = visibleArea(api.getAppState()); // later actions place into the new view
                 scrolled = true;
@@ -161,7 +163,7 @@ export function useCommandRunner(
         }
       }
 
-      // A view-only command (scrolling) leaves no undo step: "undo" then undoes the last board change.
+      // A view-only command (scrolling, zooming) leaves no undo step: "undo" then undoes the last board change.
       const changedBoard = changed > 0 && !undid;
       if (changedBoard) history.current = [...history.current.slice(-49), snapshot];
       const status: EntryStatus = controller.signal.aborted

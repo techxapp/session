@@ -430,7 +430,7 @@ def has_motion(cmd: Command) -> bool:
 
 
 SCROLL_VERBS = {"scroll", "pan"}
-SCROLL_WORDS = verb_forms("scroll", "pan") | {"scrolled", "panned", "panning", "camera", "viewport", "canvas"}
+SCROLL_WORDS = verb_forms("scroll", "pan") | {"scrolled", "panned", "panning", "camera", "viewport", "canvas", "zoom", "magnify"}
 # Nouns for the view itself: "scroll the page down". Move verbs only take the camera-like ones ("move the view
 # left"); "move the canvas down" could mean dragging it the other way, so it goes to the LLM.
 VIEW_NOUNS = {"view", "screen", "page", "canvas", "board", "camera"}
@@ -498,8 +498,68 @@ def scroll(cmd: Command, scene: dict):
     return [{"name": "scroll_view", "input": {"direction": direction, **dist}}], "scroll"
 
 
+ZOOM_FAR = {"lot", "far", "way", "more", "further"}
+ZOOM_ON = ["onto", "into", "on", "to"]
+ZOOM_RESET = {"reset zoom", "reset the zoom", "reset the zoom level", "actual size", "zoom to actual size",
+              "zoom back to actual size", "back to actual size", "zoom to normal", "zoom back to normal", "normal zoom",
+              "back to normal zoom"}  # fmt: skip
+ZOOM_SET = sorted(["zoom", "zoom to", "zoom back to", "zoom in to", "zoom out to", "set zoom to", "set the zoom to",
+                   "set zoom level to", "set the zoom level to", "change the zoom to"], key=lambda p: -len(p))  # fmt: skip
+
+
+def zoom_level(w: list[str]) -> tuple[int, int] | None:
+    """(percent, words used) for "150", "150 percent" ("150%" tokenises as "150"), "2x" or "2 times"."""
+    m = re.fullmatch(r"(\d+)(x?)", w[0]) if w else None
+    if not m:
+        return None
+    n = int(m[1])
+    if m[2]:
+        n, used = n * 100, 1
+    elif w[1:2] == ["times"]:
+        n, used = n * 100, 2
+    elif n < 10:  # "zoom to 2": a factor or a slip, not 2%
+        return None
+    else:
+        used = 2 if w[1:2] == ["percent"] else 1
+    return (n, used) if 10 <= n <= 3000 else None
+
+
+def zoom(cmd: Command, scene: dict):
+    """'zoom in', 'zoom out a bit', 'zoom in on postgres', 'zoom to 150%', '200% zoom', 'set the zoom to 2x', 'reset the zoom'."""
+    w = cmd.w
+    if cmd.phrase(0) in ZOOM_RESET:
+        return [{"name": "zoom_view", "input": {"level": 100}}], "zoom"
+    n = starts(w, ZOOM_SET)
+    level = zoom_level(w[n:]) if n else None
+    if level:
+        inp, rest = {"level": level[0]}, w[n + level[1] :]
+    elif (level := zoom_level(w)) and w[level[1] : level[1] + 1] == ["zoom"]:  # "200% zoom"
+        inp, rest = {"level": level[0]}, w[level[1] + 1 :]
+    elif w[:2] in (["zoom", "in"], ["zoom", "out"]):
+        inp, rest = {"step": w[1]}, w[2:]
+        on = next((i for i in range(len(rest)) if starts(rest[i:], ZOOM_ON)), len(rest))
+        amount, rest = set(rest[:on]), rest[on:]
+        if amount - DISTANCE_LITTLE - ZOOM_FAR - {"a"} or amount == {"a"} or (amount & DISTANCE_LITTLE and amount & ZOOM_FAR):
+            return None
+        if amount & ZOOM_FAR:
+            inp["amount"] = "far"
+        elif amount:
+            inp["amount"] = "little"
+    elif w[:1] == ["zoom"] and w[1:2] in (["into"], ["onto"]):  # "zoom into postgres"
+        inp, rest = {"step": "in"}, w[1:]
+    else:
+        return None
+    if rest:
+        k = starts(rest, ZOOM_ON)
+        target = ref(rest[k:], scene) if k else None
+        if not target:
+            return None
+        inp["on"] = target
+    return [{"name": "zoom_view", "input": inp}], "zoom"
+
+
 def has_scroll(cmd: Command) -> bool:
-    """A scroll command the templates didn't take. Laya has no scroll_view and would read it as a move."""
+    """A scroll or zoom command the templates didn't take. Laya has no scroll_view/zoom_view and would read it as a move."""
     return bool(SCROLL_WORDS & set(cmd.w))
 
 
@@ -542,7 +602,7 @@ def edits_chart(cmd: Command, scene: dict) -> bool:
     return False
 
 
-TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, scroll, move, animate]
+TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, scroll, zoom, move, animate]
 
 
 def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] | None:
@@ -569,7 +629,7 @@ def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] |
             return "fast", hit[0], f"rule: {hit[1]}"
     if has_motion(cmd):  # Laya has no animate_element: built here or left to the LLM
         return "llm", None, "motion needs the LLM"
-    if has_scroll(cmd):  # Laya has no scroll_view either
+    if has_scroll(cmd):  # Laya has no scroll_view/zoom_view either
         return "llm", None, "scroll needs the LLM"
     if has_diagram(cmd):  # nor generate_diagram ("org chart" lands here, not below)
         return "llm", None, "diagram needs the LLM"

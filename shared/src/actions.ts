@@ -272,6 +272,23 @@ export const ScrollView = z
     message: "Give exactly one of direction, to, edge or fit.",
   });
 
+export const ZoomView = z
+  .object({
+    level: z
+      .number()
+      .min(10)
+      .max(3000)
+      .optional()
+      .describe("Zoom to this level in percent: 100 = actual size ('reset the zoom'), 200 = twice as big, 50 = half."),
+    step: z.enum(["in", "out"]).optional().describe("Or zoom in / out from the current level."),
+    amount: z.enum(["little", "some", "far"]).optional().describe("With step: x1.25, x1.5 or x2.5. Default 'some'."),
+    on: ElementId.optional().describe(
+      "Zoom on this element (it goes to the middle of the screen). Default: keep the middle of the screen.",
+    ),
+  })
+  .refine((v) => (v.level === undefined) !== (v.step === undefined), { message: "Give exactly one of level or step." })
+  .refine((v) => v.amount === undefined || v.step !== undefined, { message: "amount only goes with step." });
+
 export const UndoLastCommand = z.object({});
 
 export const ClearBoard = z.object({
@@ -292,6 +309,7 @@ export const ACTION_SCHEMAS = {
   update_element: UpdateElement,
   delete_elements: DeleteElements,
   scroll_view: ScrollView,
+  zoom_view: ZoomView,
   undo_last_command: UndoLastCommand,
   clear_board: ClearBoard,
 } as const;
@@ -320,6 +338,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
   delete_elements: "Remove elements (connected arrows are removed too).",
   scroll_view:
     "Scroll the view (the camera), never the board: in a direction, to an element, to an edge of the content, or to show everything.",
+  zoom_view:
+    "Zoom the view (the camera), never the board: to a level in percent, or in/out a step, optionally on an element. Not for showing everything (scroll_view fit).",
   undo_last_command: "Undo everything the previous command did.",
   clear_board: "Erase the entire board.",
 };

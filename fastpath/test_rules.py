@@ -200,6 +200,52 @@ class Scroll(unittest.TestCase):
                 self.assertFalse(got and got[1] and got[1][0]["name"] == "scroll_view")
 
 
+class Zoom(unittest.TestCase):
+    def test_answers(self):
+        Z = lambda **k: [{"name": "zoom_view", "input": k}]  # noqa: E731
+        cases = {
+            "zoom in": Z(step="in"),
+            "zoom out": Z(step="out"),
+            "zoom out a bit": Z(step="out", amount="little"),
+            "can you zoom in a lot please": Z(step="in", amount="far"),
+            "zoom in more": Z(step="in", amount="far"),
+            "zoom in on postgres": Z(step="in", on="db"),
+            "zoom in a little on the cache": Z(step="in", amount="little", on="cache"),
+            "zoom into the api gateway": Z(step="in", on="api"),
+            "zoom to 150%": Z(level=150),
+            "zoom 200 percent": Z(level=200),
+            "um, zoom to 50%": Z(level=50),
+            "set the zoom to 2x": Z(level=200),
+            "zoom to 3 times": Z(level=300),
+            "200% zoom": Z(level=200),
+            "zoom to 250% on postgres": Z(level=250, on="db"),
+            "reset the zoom": Z(level=100),
+            "actual size": Z(level=100),
+            "zoom back to normal": Z(level=100),
+        }
+        for text, want in cases.items():
+            with self.subTest(text):
+                got = rule_command(text, SCENE)
+                self.assertEqual(got and got[:2], ("fast", want))
+
+    def test_needs_llm(self):
+        for text in [
+            "zoom in and add a box",
+            "zoom in on the database",  # a synonym
+            "zoom to 2",
+            "zoom to 5000%",
+            "zoom in a bit more",
+            "zoom in twice",
+            "zoom to 1.5x",
+        ]:
+            with self.subTest(text):
+                self.assertEqual(rule_command(text, SCENE)[:2], ("llm", None))
+
+    def test_still_scroll_or_motion(self):
+        self.assertEqual(actions("zoom to fit"), [{"name": "scroll_view", "input": {"fit": "all"}}])
+        self.assertEqual(rule_command("the boy zooms towards the girl", KIDS)[:2][0], "fast")
+
+
 class Diagram(unittest.TestCase):
     def test_needs_llm(self):
         for text in [

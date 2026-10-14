@@ -13,9 +13,12 @@ export interface View {
 }
 export type ViewState = Pick<AppState, "scrollX" | "scrollY" | "zoom" | "width" | "height">;
 type ScrollInput = Extract<BoardAction, { name: "scroll_view" }>["input"];
+type ZoomInput = Extract<BoardAction, { name: "zoom_view" }>["input"];
 type Bounds = { x1: number; y1: number; x2: number; y2: number };
 
 const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 30; // Excalidraw's own limits
+const ZOOM_STEP = { little: 1.25, some: 1.5, far: 2.5 } as const;
 const SCREEN_FRACTION = { little: 0.25, some: 0.5, far: 1 } as const;
 
 /** Unobstructed screen area (screen px): below the toolbar, above the command dock + activity feed. */
@@ -101,6 +104,25 @@ export function planScroll(elements: readonly ExcalidrawElement[], st: ViewState
       return { ...here, scrollX: (s.left + s.w) / z - all.x2 };
   }
   throw new ActionError("Give exactly one of direction, to, edge or fit.");
+}
+
+/**
+ * The view a zoom_view action ends at. Pure. Keeps the scene point at the middle of the screen in place, or with
+ * `on` puts that element's centre in the middle of the safe area.
+ */
+export function planZoom(elements: readonly ExcalidrawElement[], st: ViewState, input: ZoomInput, ctx: ExecContext): View {
+  const z = st.zoom.value;
+  const wanted = input.level !== undefined ? input.level / 100 : z * ZOOM_STEP[input.amount ?? "some"] ** (input.step === "out" ? -1 : 1);
+  const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, wanted));
+  let screen = { x: st.width / 2, y: st.height / 2 };
+  let scene = { x: screen.x / z - st.scrollX, y: screen.y / z - st.scrollY };
+  if (input.on) {
+    const b = boundsOf([resolve(elements, input.on, ctx)])!;
+    const s = safeArea(st);
+    screen = { x: s.left + s.w / 2, y: s.top + s.h / 2 };
+    scene = { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
+  }
+  return { zoom, scrollX: screen.x / zoom - scene.x, scrollY: screen.y / zoom - scene.y };
 }
 
 /**

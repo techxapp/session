@@ -29,7 +29,7 @@ export const GROUP_TOOLS: Record<ToolGroup, ActionName[]> = {
   motion: ["animate_element"],
   graph: ["plot_graph"],
   chart: ["add_chart"],
-  scroll: ["scroll_view"],
+  scroll: ["scroll_view", "zoom_view"],
 };
 
 export const DEFAULT_TOOL_ROUTER: ToolRouterMode = "auto";
@@ -64,7 +64,7 @@ const MOTION_VERB =
 const TOWARD = /\b(towards?|away from)\b/;
 
 const SCROLL =
-  /\b(scroll(s|ed|ing)?|pan(s|ned|ning)?|camera|viewport|canvas|view|screen|zoom( out| in)?|fit|show (me|everything|all|the whole)|go (back )?to|jump to|take me|focus on|back to the|all the way|top of|bottom of)\b/;
+  /\b(scroll(s|ed|ing)?|pan(s|ned|ning)?|camera|viewport|canvas|view|screen|zoom|magnif(y|ied)|actual size|fit|show (me|everything|all|the whole)|go (back )?to|jump to|take me|focus on|back to the|all the way|top of|bottom of)\b/;
 
 const GRAPH =
   /\b(graphs?|plot(s|ted|ting)?|equations?|functions?|parabola|hyperbola|sine|cosine|tangent|curves?|axis|axes|sin|cos|tan|sqrt|log|ln|exp)\b/;

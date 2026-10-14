@@ -58,6 +58,8 @@ const CASES: [string, ToolGroup[], SceneSummary?][] = [
   ["go to the database", ["scroll"]],
   ["show everything", ["scroll"]],
   ["zoom out", ["scroll"]],
+  ["zoom to 150%", ["chart", "scroll"]], // "%" is a chart word; a harmless extra group
+  ["reset the zoom", ["scroll"]],
   // scene-dependent chart edits
   ["set Q2 to 20", ["chart"], withChart],
   ["make it a pie", ["object", "chart"], withChart],

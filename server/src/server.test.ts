@@ -75,6 +75,7 @@ describe("tool definitions", () => {
       "update_element",
       "delete_elements",
       "scroll_view",
+      "zoom_view",
       "undo_last_command",
       "clear_board",
     ]);
@@ -115,6 +116,12 @@ describe("blockToEvents", () => {
     expect(blockToEvents(toolUse("scroll_view", { fit: "all" }), 0)[0].type).toBe("action");
     expect(blockToEvents(toolUse("scroll_view", { direction: "down", edge: "top" }), 0)[0].type).toBe("invalid");
     expect(blockToEvents(toolUse("scroll_view", {}), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("zoom_view", { level: 150 }), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("zoom_view", { step: "in", amount: "little", on: "db" }), 0)[0].type).toBe("action");
+    expect(blockToEvents(toolUse("zoom_view", { level: 150, step: "in" }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("zoom_view", { level: 100, amount: "far" }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("zoom_view", { level: 5 }), 0)[0].type).toBe("invalid");
+    expect(blockToEvents(toolUse("zoom_view", {}), 0)[0].type).toBe("invalid");
     expect(blockToEvents(toolUse("plot_graph", { equations: ["y = x^2", "sin(2x)"], x_min: -5, x_max: 5 }), 0)[0].type).toBe("action");
     expect(blockToEvents(toolUse("plot_graph", { equations: ["x^2 + y^2 = 1"] }), 0)[0].type).toBe("invalid");
     expect(blockToEvents(toolUse("plot_graph", { equations: ["y = foo(x)"] }), 0)[0].type).toBe("invalid");
