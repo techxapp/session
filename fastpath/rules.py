@@ -62,7 +62,8 @@ UNDO_TAILS = {"", "that", "it", "this", "last", "the last thing", "the last chan
               "last change", "that last change", "all of that", "the last one"}  # fmt: skip
 CLEAR_VERBS = {"clear", "wipe", "erase", "reset"}
 CLEAR_TAILS = {"the board", "board", "everything", "the whole board", "the entire board", "the canvas", "the whole canvas",
-               "the entire canvas", "it all", "the whole thing", "everything on the board"}  # fmt: skip
+               "the entire canvas", "it all", "the whole thing", "everything on the board",
+               "all", "all of it", "all of this", "all of that", "all this", "all that", "everything here"}  # fmt: skip
 DELETE_VERBS = ["get rid of", "delete", "remove", "erase", "drop", "scrap"]
 ADD_VERBS = {"add", "draw", "put", "place", "create", "insert", "make"}
 TEXT_VERBS = {"add", "write", "put", "insert", "create"}

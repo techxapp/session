@@ -79,10 +79,10 @@ CHATTER = [
 UNDO = ["undo", "undo that", "undo the last change", "go back", "take that back", "revert that", "undo please",
         "oops, undo", "reverse that", "put it back the way it was", "undo what you just did", "go back one step",
         "revert the last change", "never mind, undo it", "ctrl z", "undo the last command", "back that out"]  # fmt: skip
-CLEAR = ["clear the board", "clear everything", "wipe the board", "start over with a blank board", "clean the board",
+CLEAR = ["clear the board", "clear everything", "clear all", "wipe the board", "start over with a blank board", "clean the board",
          "erase the whole board", "wipe everything off", "remove everything from the board", "clear it all",
          "reset the board", "start from scratch", "delete everything on the board", "empty the board", "clear the canvas"]  # fmt: skip
-FILLERS = ["uh", "um", "okay", "ok so", "so", "please", "can you", "could you", "hey,", "alright,", "now", "and now", "uh, um,"]
+FILLERS = ["lets", "let's", "uh", "um", "okay", "ok so", "so", "please", "can you", "could you", "hey,", "alright,", "now", "and now", "uh, um,"]
 SUFFIXES = ["please", "thanks", "now", "for me", "real quick", "if you can"]
 CORRECTIONS = [", no wait, {}", ", sorry, I mean {}", "... actually {}", ", no, {}", ", I mean {}"]
 
