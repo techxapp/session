@@ -9,7 +9,7 @@ import { ActionError, applyAction } from "./executor";
 import { loadObjectFiles } from "./objects";
 import { loadPlotFiles } from "./plots";
 import { summarize, visibleArea } from "./summary";
-import { boundsOf, frame, isInSafeArea, planScroll, playScroll } from "./view";
+import { AUTO_CENTER_ANCHOR_Y, boundsOf, frame, isInSafeArea, planScroll, playScroll } from "./view";
 
 export type EntryStatus = "running" | "done" | "error" | "ignored" | "cancelled";
 
@@ -221,10 +221,10 @@ export function useCommandRunner(
   return { log, running, run, cancel, consume, applyActions, undo };
 }
 
-/** Glide the view so `ids` sit in the middle of the free screen area; keeps the zoom unless they can't fit. */
+/** Glide the view so `ids` sit at bottom centre of the free screen area; keeps the zoom unless they can't fit. */
 async function centerOn(api: ExcalidrawImperativeAPI, ids: string[], signal: AbortSignal) {
   const box = boundsOf(api.getSceneElements().filter((e) => ids.includes(e.id)));
-  if (box) await playScroll(api, frame(api.getAppState(), box), signal);
+  if (box) await playScroll(api, frame(api.getAppState(), box, AUTO_CENTER_ANCHOR_Y), signal);
 }
 
 /**

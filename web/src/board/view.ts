@@ -22,7 +22,7 @@ const SCREEN_FRACTION = { little: 0.25, some: 0.5, far: 1 } as const;
 export function safeArea(st: Pick<AppState, "width" | "height">) {
   const left = 24;
   const top = 96;
-  return { left, top, w: Math.max(200, st.width - 24 - left), h: Math.max(160, st.height - 300 - top) };
+  return { left, top, w: Math.max(200, st.width - 24 - left), h: Math.max(160, st.height - 100 - top) };
 }
 
 /** True when `b` (scene coords) is fully inside the safe area at the current view. */
@@ -34,15 +34,23 @@ export function isInSafeArea(st: ViewState, b: Bounds): boolean {
   return sx(b.x1) >= s.left && sy(b.y1) >= s.top && sx(b.x2) <= s.left + s.w && sy(b.y2) <= s.top + s.h;
 }
 
-/** Centre `b` in the safe area, keeping the zoom unless it can't fit, then zooming out just enough. */
-export function frame(st: ViewState, b: Bounds): View {
+/** Where auto-centre puts new content: this fraction down the safe area (0.5 = middle), so it lands near bottom centre. */
+export const AUTO_CENTER_ANCHOR_Y = 0.9;
+
+/**
+ * Centre `b` in the safe area, keeping the zoom unless it can't fit, then zooming out just enough.
+ * `anchorY` moves the vertical centre down the safe area (fraction of its height); `b` is kept fully inside it.
+ */
+export function frame(st: ViewState, b: Bounds, anchorY = 0.5): View {
   const s = safeArea(st);
   const fit = Math.min((s.w / Math.max(1, b.x2 - b.x1)) * 0.9, (s.h / Math.max(1, b.y2 - b.y1)) * 0.9);
   const zoom = Math.max(MIN_ZOOM, Math.min(st.zoom.value, fit));
+  const half = ((b.y2 - b.y1) * zoom) / 2;
+  const cy = Math.min(Math.max(s.top + s.h * anchorY, s.top + half), s.top + s.h - half);
   return {
     zoom,
     scrollX: (s.left + s.w / 2) / zoom - (b.x1 + b.x2) / 2,
-    scrollY: (s.top + s.h / 2) / zoom - (b.y1 + b.y2) / 2,
+    scrollY: cy / zoom - (b.y1 + b.y2) / 2,
   };
 }
 

@@ -3,7 +3,7 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { NormalizedZoomValue } from "@excalidraw/excalidraw/types";
 import type { BoardAction } from "@board/shared";
 import { ActionError, applyAction, type ExecContext } from "./executor";
-import { isInSafeArea, planScroll, safeArea, type View, type ViewState } from "./view";
+import { frame, isInSafeArea, planScroll, safeArea, type View, type ViewState } from "./view";
 
 beforeAll(async () => {
   const { setCustomTextMetricsProvider } = await import("@excalidraw/excalidraw");
@@ -74,6 +74,17 @@ describe("planScroll", () => {
         ctx(),
       ).zoom,
     ).toBe(0.8);
+  });
+
+  it("frame can sit content lower in the safe area, and keeps it fully inside", () => {
+    const s = safeArea(view());
+    const box = { x1: 0, y1: 0, x2: 100, y2: 100 };
+    const screenCentreY = (v: View) => (50 + v.scrollY) * v.zoom;
+    expect(screenCentreY(frame(view(), box))).toBeCloseTo(s.top + s.h / 2);
+    expect(screenCentreY(frame(view(), box, 0.72))).toBeCloseTo(s.top + s.h * 0.72);
+    // A box nearly as tall as the area can't go lower than fits.
+    const tall = { x1: 0, y1: 0, x2: 100, y2: s.h * 0.85 };
+    expect(isInSafeArea(asState(frame(view(), tall, 0.9)), tall)).toBe(true);
   });
 
   it("throws ActionError for an empty board or an unknown element", () => {
