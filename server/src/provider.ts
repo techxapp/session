@@ -66,6 +66,9 @@ export function openaiProvider(
       if (err instanceof OpenAI.AuthenticationError) return `The API rejected the key. ${KEY_HELP}`;
       if (err instanceof OpenAI.RateLimitError) return "Rate limited by the model API. Try again in a moment.";
       if (err instanceof OpenAI.NotFoundError) return `Model "${model}" was not found at this endpoint.`;
+      if (err instanceof OpenAI.APIError && err.status === 413) {
+        return `Request too large for this model (413). The tool definitions are ~5k tokens; a free-tier tokens-per-minute/request limit (e.g. Groq) can be smaller than that. ${err.message.slice(0, 200)}`;
+      }
       if (err instanceof OpenAI.APIError) return `Model API error (${err.status ?? "network"}).`;
       if (err instanceof Error && /api key|authentication/i.test(err.message)) return `No API key. ${KEY_HELP}`;
     },
