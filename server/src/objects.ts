@@ -96,6 +96,53 @@ export function matchObject(text: string): string | undefined {
   return close.size === 1 ? [...close][0] : undefined;
 }
 
+/** Catalog words that are usually board vocabulary in a command, not a picture ("a box labelled X", "scroll down"). */
+const NOT_OBJECTS = new Set([
+  "label",
+  "labels",
+  "link",
+  "links",
+  "chart",
+  "charts",
+  "map",
+  "maps",
+  "question",
+  "questions",
+  "scroll",
+  "scrolls",
+  "camera",
+  "symbol",
+  "sign",
+]);
+/** Words after "draw a ..." that are board shapes or text, not pictures. */
+const BOARD_NOUNS =
+  /^(box|boxe|square|rectangle|rect|circle|ellipse|oval|diamond|shape|sticky|note|card|text|title|heading|caption|label|arrow|line|connector|node|diagram|flowchart|chart|graph|plot|table|list|bullet|measurement|dimension|step|stage|item|row|column)s?$/;
+const ADD_A =
+  /\b(draw|add|put|place|sketch|insert|create)\b( me)? (a|an|another|one|some|two|three|four|five|\d+) (((small|big|large|medium|tiny|huge|little|new|[a-z]+ish)|black|gray|grey|red|orange|yellow|green|teal|blue|purple|pink) )*([a-z]+)/;
+
+/**
+ * Does a command seem to ask for a picture? For the tool router: any 1-3 word phrase (singular or plural) that
+ * names a catalog object or alias, "picture/icon/emoji of", or "draw a <noun>" where the noun isn't a board shape.
+ * Errs towards yes; a wrong yes only adds the add_object tool to the request.
+ */
+export function mentionsObject(text: string): boolean {
+  // A label's words aren't a picture request: "a box labelled payments", "rename it to tree house".
+  const t = clean(text)
+    .replace(/\b(labell?ed|called|named|saying|says|titled|with the text)\b.*$/, "")
+    .replace(/^(rename|relabel|retitle)\b(.*?)\bto\b.*$/, "$1$2");
+  if (/\b(picture|pictures|icon|icons|emoji|emojis|image|images|clip ?art|drawing of)\b/.test(t)) return true;
+  const w = t.split(" ").filter(Boolean);
+  for (let n = 3; n >= 1; n--) {
+    for (let i = 0; i + n <= w.length; i++) {
+      const phrase = w.slice(i, i + n).join(" ");
+      if (n === 1 && (phrase.length < 3 || NOT_OBJECTS.has(phrase))) continue;
+      if (exactOrSingular(phrase)) return true;
+    }
+  }
+  const noun = ADD_A.exec(t)?.[7];
+  return Boolean(noun && !BOARD_NOUNS.test(noun));
+}
+
 /**
  * Validate a tool call. In "text" mode a free-text add_object is mapped to the catalog, or turned into
  * an add_shape box labelled with the word, so the user still gets something on the board.

@@ -7,11 +7,15 @@ import {
   AddObject,
   AddObjectText,
   type CommandEvent,
+  type ActionName,
   type CommandRequest,
+  type TokenUsage,
+  type ToolRouterMode,
 } from "@board/shared";
 import { DEFAULT_EFFORT, anthropicSupportsEffort, type ReasoningEffort } from "./effort";
 import { DEFAULT_OBJECT_MODE, parseToolCall, type ObjectMode } from "./objects";
-import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
+import { buildUserMessage, promptFor } from "./prompt";
+import { CORE_TOOLS, DEFAULT_TOOL_ROUTER, GROUP_TOOLS, TOOL_GROUPS, groupsFor, groupsLabel, type ToolGroup } from "./toolRouter";
 
 export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5";
 
@@ -19,8 +23,8 @@ export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5";
  * Tool definitions generated from the shared zod schemas (single source of truth). add_object is per ObjectMode:
  * the curated enum or free text (ACTION_SCHEMAS.add_object, which validates, accepts the whole library).
  */
-const buildTools = (objects: ObjectMode): Anthropic.Tool[] =>
-  ACTION_NAMES.map((name, i) => {
+const buildTools = (objects: ObjectMode, names: readonly ActionName[] = ACTION_NAMES): Anthropic.Tool[] =>
+  names.map((name, i) => {
     const source = name === "add_object" ? (objects === "text" ? AddObjectText : AddObject) : ACTION_SCHEMAS[name];
     const { $schema: _ignored, ...schema } = z.toJSONSchema(source, { io: "input" }) as Record<string, unknown>;
     return {
@@ -31,12 +35,30 @@ const buildTools = (objects: ObjectMode): Anthropic.Tool[] =>
       // Inputs are validated with the zod schema before they're forwarded.
       eager_input_streaming: true,
       // Cache the stable tools + system prefix.
-      ...(i === ACTION_NAMES.length - 1 ? { cache_control: { type: "ephemeral" as const } } : {}),
+      ...(i === names.length - 1 ? { cache_control: { type: "ephemeral" as const } } : {}),
     };
   });
 
+/** Every tool (TOOL_ROUTER=all). */
 export const TOOLS_BY_MODE: Record<ObjectMode, Anthropic.Tool[]> = { enum: buildTools("enum"), text: buildTools("text") };
 export const TOOLS = TOOLS_BY_MODE.enum;
+
+/** Tool names for a set of groups: the core tools plus the groups', in ACTION_NAMES order. */
+export function toolNamesFor(groups: readonly ToolGroup[]): ActionName[] {
+  const names = new Set<ActionName>([...CORE_TOOLS, ...groups.flatMap((g) => GROUP_TOOLS[g])]);
+  return ACTION_NAMES.filter((n) => names.has(n));
+}
+
+const toolSets = new Map<string, Anthropic.Tool[]>();
+
+/** The tools for a set of groups, built once per set so each stays byte-stable (prompt caching). */
+export function toolsFor(groups: readonly ToolGroup[], objects: ObjectMode = DEFAULT_OBJECT_MODE): Anthropic.Tool[] {
+  if (groups.length === TOOL_GROUPS.length) return TOOLS_BY_MODE[objects];
+  const key = `${objects} ${groups.join(",")}`;
+  let tools = toolSets.get(key);
+  if (!tools) toolSets.set(key, (tools = buildTools(objects, toolNamesFor(groups))));
+  return tools;
+}
 
 export type Emit = (event: CommandEvent) => void;
 
@@ -64,19 +86,21 @@ export async function runSystem1(
   model = DEFAULT_ANTHROPIC_MODEL,
   effort: ReasoningEffort = DEFAULT_EFFORT,
   objects: ObjectMode = DEFAULT_OBJECT_MODE,
+  router: ToolRouterMode = DEFAULT_TOOL_ROUTER,
 ) {
   const startedAt = Date.now();
   let count = 0;
+  const groups = groupsFor(router, req.text, req.scene);
 
   const stream = client.messages.stream(
     {
       model,
       max_tokens: 4096,
       ...(effort !== "off" && anthropicSupportsEffort(model) ? { output_config: { effort } } : {}),
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: TOOLS_BY_MODE[objects],
+      system: [{ type: "text", text: promptFor(groups), cache_control: { type: "ephemeral" } }],
+      tools: toolsFor(groups, objects),
       tool_choice: { type: "auto" },
-      messages: [{ role: "user", content: buildUserMessage(req.text, req.scene) }],
+      messages: [{ role: "user", content: buildUserMessage(req.text, req.scene, { chartData: groups.includes("chart") }) }],
     },
     { signal },
   );
@@ -94,5 +118,20 @@ export async function runSystem1(
   } else if (message.stop_reason === "max_tokens") {
     emit({ type: "error", message: "Command was too long to finish; try splitting it up." });
   }
-  emit({ type: "done", ms: Date.now() - startedAt, model: message.model, actions: count });
+  emit({
+    type: "done",
+    ms: Date.now() - startedAt,
+    model: message.model,
+    actions: count,
+    tools: groupsLabel(groups),
+    tokens: usageOf(message),
+  });
+}
+
+/** Anthropic reports cache reads and writes apart from `input_tokens`; all three were sent. */
+export function usageOf(message: Pick<Anthropic.Message, "usage">): TokenUsage | undefined {
+  const u = message.usage;
+  if (!u) return undefined;
+  const cached = u.cache_read_input_tokens ?? 0;
+  return { in: u.input_tokens + cached + (u.cache_creation_input_tokens ?? 0), out: u.output_tokens, ...(cached ? { cached } : {}) };
 }

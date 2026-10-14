@@ -15,9 +15,9 @@ import {
   settingsFromEnv,
   type ClientFactory,
 } from "./provider";
-import { buildUserMessage } from "./prompt";
-import { TOOLS, TOOLS_BY_MODE, blockToEvents } from "./system1";
-import { OPENAI_TOOLS, OPENAI_TOOLS_BY_MODE, looksMultiStep, toolCallToEvent } from "./system1-openai";
+import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
+import { TOOLS, TOOLS_BY_MODE, blockToEvents, toolsFor, usageOf } from "./system1";
+import { OPENAI_TOOLS, OPENAI_TOOLS_BY_MODE, addUsage, looksMultiStep, openaiToolsFor, toolCallToEvent } from "./system1-openai";
 
 const scene: CommandRequest["scene"] = {
   elements: [{ id: "api", type: "rectangle", label: "API", x: 10, y: 20, w: 180, h: 84 }],
@@ -197,7 +197,55 @@ describe("POST /api/command", () => {
     const events = parseSse(res.body);
     expect(events[1]).toMatchObject({ action: { name: "add_object", input: { id: "pup", object: "dog" } } });
     expect(events[2]).toMatchObject({ action: { name: "add_shape", input: { id: "tower", kind: "rectangle", label: "skyscraper" } } });
-    expect((calls[0] as { tools: unknown }).tools).toBe(TOOLS_BY_MODE.text);
+    expect((calls[0] as { tools: unknown }).tools).toBe(toolsFor(["object"], "text"));
+  });
+
+  it("routes tools: core only for a plain command, plus the groups a command needs, or all of them", async () => {
+    const run = async (text: string, tools?: "auto" | "all", chart = false) => {
+      const { client, calls } = fakeClient([]);
+      const s = chart
+        ? {
+            ...scene,
+            elements: [
+              ...scene.elements,
+              { id: "sales", type: "chart" as const, x: 0, y: 0, w: 1, h: 1, data: 'column; labels ["Q1","Q2"]' },
+            ],
+          }
+        : scene;
+      const res = await buildApp(anthropicProvider(client, undefined, true, "low", "enum", tools), { logger: false }).inject({
+        method: "POST",
+        url: "/api/command",
+        payload: { text, scene: s },
+      });
+      const params = calls[0] as { tools: Anthropic.Tool[]; system: { text: string }[]; messages: { content: string }[] };
+      return {
+        names: params.tools.map((t) => t.name),
+        system: params.system[0].text,
+        user: params.messages[0].content,
+        events: parseSse(res.body),
+      };
+    };
+    const plain = await run("add a red box next to the api");
+    expect(plain.names).toEqual([
+      "add_shape",
+      "add_text",
+      "add_arrow",
+      "move_element",
+      "update_element",
+      "delete_elements",
+      "undo_last_command",
+      "clear_board",
+    ]);
+    expect(plain.system).not.toContain("plot_graph");
+    expect(plain.events.at(-1)).toMatchObject({ type: "done", tools: ["core"] });
+    const chart = await run("set Q2 to 20", "auto", true);
+    expect(chart.names).toContain("add_chart");
+    expect(chart.user).toContain("data: column");
+    expect((await run("make it bigger", "auto", true)).user).not.toContain("data:");
+    const all = await run("add a red box", "all");
+    expect(all.names).toEqual(TOOLS.map((t) => t.name));
+    expect(all.system).toBe(SYSTEM_PROMPT);
+    expect(all.events.at(-1)).toMatchObject({ tools: ["all"] });
   });
 
   it("reports refusals", async () => {
@@ -285,7 +333,41 @@ describe("toolCallToEvent", () => {
   });
 });
 
+describe("token usage", () => {
+  it("counts Anthropic cache reads and writes as sent tokens", () => {
+    const usage = { input_tokens: 40, output_tokens: 90, cache_read_input_tokens: 8000, cache_creation_input_tokens: 0 };
+    expect(usageOf({ usage } as Anthropic.Message)).toEqual({ in: 8040, out: 90, cached: 8000 });
+    expect(usageOf({ usage: { ...usage, cache_read_input_tokens: null } } as unknown as Anthropic.Message)).toEqual({ in: 40, out: 90 });
+  });
+
+  it("sums OpenAI usage over follow-up turns", () => {
+    const one = addUsage(undefined, { prompt_tokens: 3000, completion_tokens: 50, total_tokens: 3050 });
+    expect(one).toEqual({ in: 3000, out: 50 });
+    const two = addUsage(one, {
+      prompt_tokens: 3100,
+      completion_tokens: 40,
+      total_tokens: 3140,
+      prompt_tokens_details: { cached_tokens: 2900 },
+    });
+    expect(two).toEqual({ in: 6100, out: 90, cached: 2900 });
+  });
+});
+
 describe("POST /api/command (OpenAI)", () => {
+  it("sends the routed tool subset on every turn", async () => {
+    const { client, calls } = fakeOpenAI([fn(0, "add_shape", '{"kind":"rectangle"}')]);
+    await buildApp(openaiProvider(client), { logger: false }).inject({
+      method: "POST",
+      url: "/api/command",
+      payload: { text: "scroll down and add a box", scene },
+    });
+    const tools = (calls[0] as { tools: OpenAI.Chat.Completions.ChatCompletionFunctionTool[] }).tools;
+    expect(tools).toBe(openaiToolsFor(["scroll"]));
+    expect(calls[0]).toMatchObject({ stream_options: { include_usage: true } });
+    expect(tools.map((t) => t.function.name)).toContain("scroll_view");
+    expect(tools.map((t) => t.function.name)).not.toContain("add_chart");
+  });
+
   it("stitches streamed tool-call deltas into validated actions", async () => {
     const { client, calls } = fakeOpenAI([
       fn(0, "add_shape", '{"id":"db","kin'),
@@ -484,6 +566,10 @@ describe("request config (UI settings over .env)", () => {
     const { f } = factory();
     expect(buildProvider(s, { provider: "anthropic" }, f).model).toBe("env-model");
     expect(buildProvider(s, { provider: "openai" }, f).model).toBe("gpt-4.1-mini");
+    expect(buildProvider(s, {}, f).tools).toBe("auto");
+    expect(buildProvider(s, { tools: "all" }, f).tools).toBe("all");
+    expect(settingsFromEnv({ ...env, TOOL_ROUTER: "all" }).tools).toBe("all");
+    expect(() => settingsFromEnv({ ...env, TOOL_ROUTER: "some" })).toThrow(/TOOL_ROUTER/);
     expect(() => buildProvider(s, { provider: "openai", baseUrl: "https://api.groq.com/openai/v1" }, f)).toThrow(/Choose a model/);
   });
 
@@ -498,6 +584,7 @@ describe("request config (UI settings over .env)", () => {
     });
     const events = parseSse(res.body);
     expect(events[0]).toMatchObject({ type: "route", source: "cloud", model: "env-model", objects: "text" });
+    expect(events.at(-1)).toMatchObject({ type: "done", tools: ["core", "object"] });
     expect(events[1]).toMatchObject({ action: { name: "add_object", input: { object: "kangaroo" } } });
     expect(built[0].apiKey).toBe("k");
   });

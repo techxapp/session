@@ -11,6 +11,7 @@ const health: HealthInfo = {
   keyedEndpoints: ["openai https://api.cerebras.ai/v1"],
   effort: "low",
   objectMode: "enum",
+  toolRouter: "auto",
   fastPath: false,
   stt: { provider: "deepgram", keyed: ["deepgram"] },
 };
@@ -20,6 +21,7 @@ describe("settings -> request config", () => {
   it("sends nothing on the server's .env until something is overridden", () => {
     expect(requestConfig(DEFAULT_SETTINGS, health)).toBeUndefined();
     expect(requestConfig(with_({ profiles: { server: { objectMode: "text" } } }), health)).toEqual({ objectMode: "text" });
+    expect(requestConfig(with_({ profiles: { server: { tools: "all" } } }), health)).toEqual({ tools: "all" });
   });
 
   it("sends the chosen provider's endpoint, key and model", () => {
@@ -31,6 +33,7 @@ describe("settings -> request config", () => {
       model: "grok-x",
       effort: "off",
       objectMode: undefined,
+      tools: undefined,
     });
   });
 

@@ -28,6 +28,11 @@ export interface SceneSummary {
 /** How add_object names its picture: "enum" = curated list in the tool, "text" = free text mapped on the server. */
 export type ObjectMode = "enum" | "text";
 export type ReasoningEffort = "off" | "low" | "medium" | "high";
+/**
+ * Which tools a cloud request carries: "auto" = the core tools plus only the groups a local keyword/scene
+ * filter picks for the command (server/src/toolRouter.ts), "all" = every tool and the full prompt.
+ */
+export type ToolRouterMode = "auto" | "all";
 /** The two API styles the server speaks; every OpenAI-compatible service (Cerebras, xAI, Groq...) is "openai". */
 export type ApiStyle = "anthropic" | "openai";
 
@@ -44,6 +49,7 @@ export interface ModelConfig {
   model?: string;
   effort?: ReasoningEffort;
   objectMode?: ObjectMode;
+  tools?: ToolRouterMode;
 }
 
 export interface CommandRequest {
@@ -73,6 +79,7 @@ export interface HealthInfo {
   keyedEndpoints: string[];
   effort: ReasoningEffort;
   objectMode: ObjectMode;
+  toolRouter: ToolRouterMode;
   fastPath: boolean;
   /** STT_PROVIDER, and the cloud speech providers the server has a .env key for. */
   stt: { provider: SttProvider; keyed: SttProvider[] };
@@ -103,4 +110,15 @@ export type CommandEvent =
   | { type: "say"; text: string }
   | { type: "invalid"; name: string; error: string }
   | { type: "error"; message: string }
-  | { type: "done"; ms: number; model: string; actions: number };
+  /**
+   * `tools`: the tool groups the cloud model was given ("all", or "core" plus any extras); absent for local answers.
+   * `tokens`: what the cloud model reported, summed over all its requests for the command; absent if it reported none.
+   */
+  | { type: "done"; ms: number; model: string; actions: number; tools?: string[]; tokens?: TokenUsage };
+
+/** Tokens sent (`in`, including cached prompt tokens), of those read from the prompt cache (`cached`), and received (`out`). */
+export interface TokenUsage {
+  in: number;
+  out: number;
+  cached?: number;
+}

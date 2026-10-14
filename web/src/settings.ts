@@ -6,6 +6,7 @@ import {
   type ObjectMode,
   type ReasoningEffort,
   type SttProvider,
+  type ToolRouterMode,
   CLOUD_STT,
 } from "@board/shared";
 
@@ -55,6 +56,8 @@ export interface Profile {
   model?: string;
   effort?: ReasoningEffort;
   objectMode?: ObjectMode;
+  /** Tools per request: only what the command needs (auto) or every tool (all). */
+  tools?: ToolRouterMode;
   /** The endpoint's model list, last loaded from it. */
   models?: string[];
 }
@@ -167,7 +170,7 @@ export function speechConfig(s: Settings, health: HealthInfo | null): SpeechConf
 export function requestConfig(s: Settings, health: HealthInfo | null): ModelConfig | undefined {
   const c = activeChoice(s);
   const p = activeProfile(s);
-  const overrides = { model: p.model || undefined, effort: p.effort, objectMode: p.objectMode };
+  const overrides = { model: p.model || undefined, effort: p.effort, objectMode: p.objectMode, tools: p.tools };
   if (!c) return Object.values(overrides).some(Boolean) ? overrides : undefined;
   return { provider: c.provider, baseUrl: c.baseUrl, apiKey: p.apiKey || undefined, ...overrides, model: effectiveModel(s, health) };
 }

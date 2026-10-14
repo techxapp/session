@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Check, CircleSlash, Cloud, Cpu, History, Loader2, MessageSquare, PanelRightClose, Undo2 } from "lucide-react";
+import type { TokenUsage } from "@board/shared";
 import type { LogEntry } from "../board/useCommandRunner";
 import { modelName } from "./StatusPill";
 
@@ -108,6 +109,12 @@ function ActivityRow({ entry, latest, onUndo }: { entry: LogEntry; latest: boole
             {modelName(entry.source.model)} · {entry.source.detail}
             {entry.source.kind === "local" && entry.source.ms > 0 ? ` · ${fmt(entry.source.ms)}` : ""}
             {entry.source.objects ? ` · objects: ${entry.source.objects}` : ""}
+            {entry.source.tools ? ` · tools: ${entry.source.tools.join("+")}` : ""}
+            {entry.tokens && (
+              <span title={tokenTitle(entry.tokens)}>
+                {` · tokens: ${fmtTokens(entry.tokens.in)} in, ${fmtTokens(entry.tokens.out)} out`}
+              </span>
+            )}
           </div>
         )}
         {entry.notes.map((n, i) => (
@@ -120,5 +127,11 @@ function ActivityRow({ entry, latest, onUndo }: { entry: LogEntry; latest: boole
     </li>
   );
 }
+
+/** Rounded token counts: 840 -> "840", 8234 -> "8.2k", 12345 -> "12k". */
+export const fmtTokens = (n: number) =>
+  n < 1000 ? String(n) : n < 10_000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : `${Math.round(n / 1000)}k`;
+const tokenTitle = (t: TokenUsage) =>
+  `${t.in.toLocaleString()} tokens sent${t.cached ? ` (${t.cached.toLocaleString()} from the prompt cache)` : ""}, ${t.out.toLocaleString()} received`;
 
 const fmt = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);

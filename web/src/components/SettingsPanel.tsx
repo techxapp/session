@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, Plus, RefreshCw, Settings2, X } from "lucide-react";
-import { CLOUD_STT, type HealthInfo, type ObjectMode, type ReasoningEffort, type SttProvider } from "@board/shared";
+import { CLOUD_STT, type HealthInfo, type ObjectMode, type ReasoningEffort, type SttProvider, type ToolRouterMode } from "@board/shared";
 import { fetchModels } from "../api";
 import {
   SERVER,
@@ -30,6 +30,14 @@ const EFFORTS: ReasoningEffort[] = ["off", "low", "medium", "high"];
 const OBJECT_MODES: { value: ObjectMode; label: string; title: string }[] = [
   { value: "enum", label: "Enum", title: "The model picks from the curated list of ~190 pictures (bigger prompt)" },
   { value: "text", label: "Text", title: "The model names any thing; the server maps it to ~1,600 pictures or draws a labelled box" },
+];
+const TOOL_MODES: { value: ToolRouterMode; label: string; title: string }[] = [
+  {
+    value: "auto",
+    label: "Auto",
+    title: "Send the core tools plus only those the command needs (keyword filter): smaller, cheaper requests",
+  },
+  { value: "all", label: "All", title: "Send every tool and the full prompt with each command (biggest request)" },
 ];
 const SPEECH: { value: SttProvider; label: string; title: string }[] = [
   { value: "moonshine", label: "Moonshine", title: "On this computer (the stt/server.py sidecar): free, CPU only" },
@@ -258,6 +266,16 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
             onChange={(objectMode) => setProfile({ objectMode })}
             options={OBJECT_MODES}
             defaultLabel={`Default (${health?.objectMode ?? "enum"})`}
+          />
+        </div>
+
+        <div className="field">
+          <span className="field-label">Tools</span>
+          <Segmented
+            value={profile.tools}
+            onChange={(tools) => setProfile({ tools })}
+            options={TOOL_MODES}
+            defaultLabel={`Default (${health?.toolRouter ?? "auto"})`}
           />
         </div>
 

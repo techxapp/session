@@ -1,10 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { DEFAULT_BASE_URLS, endpointKey, type ApiStyle, type CommandRequest, type ModelConfig } from "@board/shared";
+import { DEFAULT_BASE_URLS, endpointKey, type ApiStyle, type CommandRequest, type ModelConfig, type ToolRouterMode } from "@board/shared";
 import { DEFAULT_ANTHROPIC_MODEL, runSystem1, type Emit } from "./system1";
 import { DEFAULT_EFFORT, DEFAULT_MAX_TURNS, effortFromEnv, maxTurnsFromEnv, type ReasoningEffort } from "./effort";
 import { DEFAULT_OBJECT_MODE, objectModeFromEnv, type ObjectMode } from "./objects";
 import { DEFAULT_OPENAI_MODEL, runSystem1OpenAI } from "./system1-openai";
+import { DEFAULT_TOOL_ROUTER, toolRouterFromEnv } from "./toolRouter";
 
 export type ProviderName = ApiStyle;
 
@@ -15,6 +16,8 @@ export interface Provider {
   hasKey: boolean;
   /** How add_object names its picture; reported on the route event so the activity log can show it. */
   objects: ObjectMode;
+  /** Which tools a request carries: the routed subset ("auto") or every tool. */
+  tools: ToolRouterMode;
   /** True when a local fast-path model answers simple commands first (see fastpath.ts). */
   fastPath?: boolean;
   run(req: CommandRequest, emit: Emit, signal?: AbortSignal): Promise<void>;
@@ -30,13 +33,15 @@ export function anthropicProvider(
   hasKey = true,
   effort: ReasoningEffort = DEFAULT_EFFORT,
   objects: ObjectMode = DEFAULT_OBJECT_MODE,
+  tools: ToolRouterMode = DEFAULT_TOOL_ROUTER,
 ): Provider {
   return {
     name: "anthropic",
     model,
     hasKey,
     objects,
-    run: (req, emit, signal) => runSystem1(client, req, emit, signal, model, effort, objects),
+    tools,
+    run: (req, emit, signal) => runSystem1(client, req, emit, signal, model, effort, objects, tools),
     describeError(err) {
       if (err instanceof Anthropic.AuthenticationError) return `The Anthropic API rejected the key. ${KEY_HELP}`;
       if (err instanceof Anthropic.RateLimitError) return "Rate limited by the model API. Try again in a moment.";
@@ -54,20 +59,22 @@ export function openaiProvider(
   effort: ReasoningEffort = DEFAULT_EFFORT,
   maxTurns = DEFAULT_MAX_TURNS,
   objects: ObjectMode = DEFAULT_OBJECT_MODE,
+  tools: ToolRouterMode = DEFAULT_TOOL_ROUTER,
 ): Provider {
   const provider: Provider = {
     name: "openai",
     model,
     hasKey,
     objects,
+    tools,
     run: (req, emit, signal) =>
-      runSystem1OpenAI(client, req, emit, signal, model, effort, maxTurns, (e) => provider.describeError(e), objects),
+      runSystem1OpenAI(client, req, emit, signal, model, effort, maxTurns, (e) => provider.describeError(e), objects, tools),
     describeError(err) {
       if (err instanceof OpenAI.AuthenticationError) return `The API rejected the key. ${KEY_HELP}`;
       if (err instanceof OpenAI.RateLimitError) return "Rate limited by the model API. Try again in a moment.";
       if (err instanceof OpenAI.NotFoundError) return `Model "${model}" was not found at this endpoint.`;
       if (err instanceof OpenAI.APIError && err.status === 413) {
-        return `Request too large for this model (413). The tool definitions are ~5k tokens; a free-tier tokens-per-minute/request limit (e.g. Groq) can be smaller than that. ${err.message.slice(0, 200)}`;
+        return `Request too large for this model (413). A free-tier tokens-per-minute/request limit (e.g. Groq) can be smaller than one command's prompt and tools; keep Settings > Tools on Auto. ${err.message.slice(0, 200)}`;
       }
       if (err instanceof OpenAI.APIError) return `Model API error (${err.status ?? "network"}).`;
       if (err instanceof Error && /api key|authentication/i.test(err.message)) return `No API key. ${KEY_HELP}`;
@@ -93,6 +100,7 @@ export interface ServerSettings {
   model?: string;
   effort: ReasoningEffort;
   objects: ObjectMode;
+  tools: ToolRouterMode;
   maxTurns: number;
   /** endpointKey -> API key. Each .env key belongs to exactly one endpoint and is never sent anywhere else. */
   keys: Map<string, string>;
@@ -121,6 +129,7 @@ export function settingsFromEnv(env: NodeJS.ProcessEnv = process.env): ServerSet
     model: env.SYSTEM1_MODEL || undefined,
     effort: effortFromEnv(env),
     objects: objectModeFromEnv(env),
+    tools: toolRouterFromEnv(env),
     maxTurns: maxTurnsFromEnv(env),
     keys,
   };
@@ -176,9 +185,12 @@ export function buildProvider(settings: ServerSettings, config: ModelConfig = {}
   if (!model) throw new Error(`Choose a model for ${baseUrl} in Settings.`);
   const effort = config.effort ?? settings.effort;
   const objects = config.objectMode ?? settings.objects;
+  const tools = config.tools ?? settings.tools;
   const opts = { apiKey: apiKey || "missing", baseURL: baseUrl || undefined };
-  if (provider === "openai") return openaiProvider(factory.openai(opts), model, Boolean(apiKey), effort, settings.maxTurns, objects);
-  return anthropicProvider(factory.anthropic(opts), model, Boolean(apiKey), effort, objects);
+  if (provider === "openai") {
+    return openaiProvider(factory.openai(opts), model, Boolean(apiKey), effort, settings.maxTurns, objects, tools);
+  }
+  return anthropicProvider(factory.anthropic(opts), model, Boolean(apiKey), effort, objects, tools);
 }
 
 /** Model ids the endpoint offers (GET /models), for the Settings model picker. */
@@ -206,7 +218,9 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): Provider 
   // The .env provider keeps the old construction (the Anthropic SDK reads ANTHROPIC_BASE_URL etc. itself).
   if (settings.provider === "openai") {
     const hasKey = Boolean(env.OPENAI_API_KEY);
-    return openaiProvider(openaiClientFromEnv(env), settings.model, hasKey, settings.effort, settings.maxTurns, settings.objects);
+    const client = openaiClientFromEnv(env);
+    return openaiProvider(client, settings.model, hasKey, settings.effort, settings.maxTurns, settings.objects, settings.tools);
   }
-  return anthropicProvider(new Anthropic(), settings.model, Boolean(env.ANTHROPIC_API_KEY), settings.effort, settings.objects);
+  const { model, effort, objects, tools } = settings;
+  return anthropicProvider(new Anthropic(), model, Boolean(env.ANTHROPIC_API_KEY), effort, objects, tools);
 }

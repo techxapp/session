@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { BoardAction, CommandEvent, CommandSource, ModelConfig, ObjectMode } from "@board/shared";
+import type { BoardAction, CommandEvent, CommandSource, ModelConfig, ObjectMode, TokenUsage } from "@board/shared";
 import { streamCommand } from "../api";
 import { playAnimation } from "./animate";
 import { ActionError, applyAction } from "./executor";
@@ -21,9 +21,11 @@ export interface LogEntry {
   /** Latency to the first action reaching the board. */
   firstMs?: number;
   totalMs?: number;
+  /** Tokens the cloud model reported for this command (absent for local answers). */
+  tokens?: TokenUsage;
   notes: { kind: "say" | "warn" | "error"; text: string }[];
   /** Which model decided the command (local fast path or cloud LLM) and why; set as soon as the server knows. */
-  source?: { kind: CommandSource; model: string; detail: string; ms: number; objects?: ObjectMode };
+  source?: { kind: CommandSource; model: string; detail: string; ms: number; objects?: ObjectMode; tools?: string[] };
 }
 
 type Snapshot = readonly ExcalidrawElement[];
@@ -140,7 +142,12 @@ export function useCommandRunner(
             failed = true;
             update(id, (e) => ({ ...e, notes: [...e.notes, { kind: "error", text: ev.message }] }));
           } else if (ev.type === "done") {
-            update(id, (e) => ({ ...e, totalMs: ev.ms }));
+            update(id, (e) => ({
+              ...e,
+              totalMs: ev.ms,
+              tokens: ev.tokens,
+              source: e.source && ev.tools ? { ...e.source, tools: ev.tools } : e.source,
+            }));
           }
         }
       } catch (err) {

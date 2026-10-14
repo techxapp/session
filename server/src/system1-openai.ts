@@ -1,10 +1,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
-import type { CommandRequest } from "@board/shared";
+import type { CommandRequest, TokenUsage, ToolRouterMode } from "@board/shared";
 import { DEFAULT_EFFORT, DEFAULT_MAX_TURNS, openaiEffortParam, type ReasoningEffort } from "./effort";
 import { DEFAULT_OBJECT_MODE, parseToolCall, type ObjectMode } from "./objects";
-import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
-import { TOOLS_BY_MODE, type Emit } from "./system1";
+import { buildUserMessage, promptFor } from "./prompt";
+import { TOOLS_BY_MODE, toolsFor, type Emit } from "./system1";
+import { DEFAULT_TOOL_ROUTER, groupsFor, groupsLabel, type ToolGroup } from "./toolRouter";
 
 export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 
@@ -19,6 +20,17 @@ export const OPENAI_TOOLS_BY_MODE: Record<ObjectMode, OpenAI.Chat.Completions.Ch
   text: toOpenAI(TOOLS_BY_MODE.text),
 };
 export const OPENAI_TOOLS = OPENAI_TOOLS_BY_MODE.enum;
+
+const openaiToolSets = new WeakMap<Anthropic.Tool[], OpenAI.Chat.Completions.ChatCompletionFunctionTool[]>();
+
+/** toolsFor in OpenAI's shape; the same set of groups always gives the same array. */
+export function openaiToolsFor(groups: readonly ToolGroup[], objects: ObjectMode = DEFAULT_OBJECT_MODE) {
+  const tools = toolsFor(groups, objects);
+  if (tools === TOOLS_BY_MODE[objects]) return OPENAI_TOOLS_BY_MODE[objects];
+  let converted = openaiToolSets.get(tools);
+  if (!converted) openaiToolSets.set(tools, (converted = toOpenAI(tools)));
+  return converted;
+}
 
 interface PendingCall {
   name: string;
@@ -65,17 +77,21 @@ export async function runSystem1OpenAI(
   maxTurns = DEFAULT_MAX_TURNS,
   describeError: (err: unknown) => string | undefined = () => undefined,
   objects: ObjectMode = DEFAULT_OBJECT_MODE,
+  router: ToolRouterMode = DEFAULT_TOOL_ROUTER,
 ) {
   const startedAt = Date.now();
   const multiStep = looksMultiStep(req.text);
+  const groups = groupsFor(router, req.text, req.scene);
+  const tools = openaiToolsFor(groups, objects);
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: buildUserMessage(req.text, req.scene) },
+    { role: "system", content: promptFor(groups) },
+    { role: "user", content: buildUserMessage(req.text, req.scene, { chartData: groups.includes("chart") }) },
   ];
   let count = 0;
   let text = "";
   let finish: string | null = null;
   let actualModel = model;
+  let usage: TokenUsage | undefined;
 
   for (let turn = 0; turn < maxTurns; turn++) {
     let stream;
@@ -86,7 +102,8 @@ export async function runSystem1OpenAI(
           max_completion_tokens: 4096,
           ...(openaiEffortParam(model, effort) ? { reasoning_effort: openaiEffortParam(model, effort) } : {}),
           stream: true,
-          tools: OPENAI_TOOLS_BY_MODE[objects],
+          stream_options: { include_usage: true },
+          tools,
           tool_choice: "auto",
           parallel_tool_calls: true,
           messages,
@@ -118,6 +135,7 @@ export async function runSystem1OpenAI(
 
     for await (const chunk of stream) {
       actualModel = chunk.model || actualModel;
+      if (chunk.usage) usage = addUsage(usage, chunk.usage);
       const choice = chunk.choices[0];
       if (!choice) continue;
       if (choice.delta.content) text += choice.delta.content;
@@ -158,5 +176,11 @@ export async function runSystem1OpenAI(
   } else if (finish === "length") {
     emit({ type: "error", message: "Command was too long to finish; try splitting it up." });
   }
-  emit({ type: "done", ms: Date.now() - startedAt, model: actualModel, actions: count });
+  emit({ type: "done", ms: Date.now() - startedAt, model: actualModel, actions: count, tools: groupsLabel(groups), tokens: usage });
+}
+
+/** Add one request's usage (sent on the stream's last chunk) to the command's total; `prompt_tokens` includes cached ones. */
+export function addUsage(total: TokenUsage | undefined, u: OpenAI.Completions.CompletionUsage): TokenUsage {
+  const cached = (total?.cached ?? 0) + (u.prompt_tokens_details?.cached_tokens ?? 0);
+  return { in: (total?.in ?? 0) + u.prompt_tokens, out: (total?.out ?? 0) + u.completion_tokens, ...(cached ? { cached } : {}) };
 }

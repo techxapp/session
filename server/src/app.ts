@@ -14,6 +14,7 @@ const Config = z
     model: z.string().trim().max(200).optional(),
     effort: z.enum(["off", "low", "medium", "high"]).optional(),
     objectMode: z.enum(["enum", "text"]).optional(),
+    tools: z.enum(["auto", "all"]).optional(),
   })
   .optional();
 
@@ -58,6 +59,7 @@ export function buildApp(provider: Provider, opts: AppOptions = {}) {
     keyedEndpoints: opts.info?.keyedEndpoints ?? [],
     effort: opts.info?.effort ?? DEFAULT_EFFORT,
     objectMode: provider.objects,
+    toolRouter: provider.tools,
     fastPath: Boolean(provider.fastPath),
     stt: { provider: opts.stt?.provider ?? "moonshine", keyed: opts.stt ? sttKeyed(opts.stt) : [] },
   }));
