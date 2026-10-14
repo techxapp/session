@@ -13,6 +13,8 @@ export interface SceneElementSummary {
   /** For arrows: connected element ids. */
   from?: string;
   to?: string;
+  /** For data charts: kind, labels, series values, unit and colours, so a change can redraw it (add_chart replace). */
+  data?: string;
 }
 
 export interface SceneSummary {

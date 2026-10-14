@@ -502,9 +502,60 @@ function plotGraph(elements: readonly El[], input: Extract<BoardAction, { name: 
   return { elements: [...elements, ...plotElement(id, spec, { ...pos, ...size })], touched: [id] };
 }
 
+const isPieKind = (kind: string) => kind === "pie" || kind === "donut";
+
+/**
+ * Colours for a redrawn chart without `colors`: each slice (by label) or series (by name, else position) keeps
+ * its old colour; new ones get the first default colour not already in use.
+ */
+function keptColors(old: ChartSpec, input: Extract<BoardAction, { name: "add_chart" }>["input"]): string[] {
+  const pie = isPieKind(input.kind);
+  if (pie !== isPieKind(old.chart)) return colorHex(undefined, pie ? input.labels.length : input.series.length);
+  const key = (name: string | undefined, i: number) => (name ? name.trim().toLowerCase() : `#${i}`);
+  const oldKeys = pie ? old.labels.map((l, i) => key(l, i)) : old.series.map((s, i) => key(s.name, i));
+  const newKeys = pie ? input.labels.map((l, i) => key(l, i)) : input.series.map((s, i) => key(s.name, i));
+  const kept = newKeys.map((k) => old.colors[oldKeys.indexOf(k)] as string | undefined);
+  const free = colorHex(undefined, SERIES_COLORS.length).filter((c) => !kept.includes(c));
+  return kept.map((c, i) => c ?? free.shift() ?? colorHex(undefined, i + 1)[i]);
+}
+
+/** add_chart with `replace`: the chart is redrawn in place (id, position, arrows kept); omitted title/unit/colours/size are kept. */
+function replaceChart(elements: readonly El[], input: Extract<BoardAction, { name: "add_chart" }>["input"], ctx: ExecContext): ExecResult {
+  const target = resolve(elements, input.replace!, ctx);
+  const old = plotOf(target);
+  if (old?.kind !== "chart") throw new ActionError("Only a data chart can be redrawn with new data.");
+  const size = input.size ? PLOT_SIZES[input.size] : { w: old.w, h: old.h };
+  const title = input.title !== undefined ? input.title : old.title;
+  const unit = input.unit !== undefined ? input.unit : old.unit;
+  const pie = isPieKind(input.kind);
+  const spec: ChartSpec = {
+    kind: "chart",
+    chart: input.kind,
+    labels: input.labels,
+    series: input.series.map((s) => ({ ...(s.name ? { name: s.name } : {}), values: s.values })),
+    colors: input.colors ? colorHex(input.colors, pie ? input.labels.length : input.series.length) : keptColors(old, input),
+    ...(title ? { title } : {}),
+    ...(unit ? { unit } : {}),
+    w: size.w,
+    h: size.h,
+  };
+  let next = respec(elements, target, spec);
+  if (input.size) {
+    next = next.map((e) =>
+      e.id === target.id
+        ? newElementWith(e, { x: e.x + (e.width - size.w) / 2, y: e.y + (e.height - size.h) / 2, width: size.w, height: size.h })
+        : e,
+    );
+    next = rerouteArrows(next, new Set([target.id]));
+  }
+  touch(ctx, target.id);
+  return { elements: next, touched: [target.id] };
+}
+
 function addChart(elements: readonly El[], input: Extract<BoardAction, { name: "add_chart" }>["input"], ctx: ExecContext): ExecResult {
+  if (input.replace) return replaceChart(elements, input, ctx);
   const size = PLOT_SIZES[input.size ?? "medium"];
-  const pie = input.kind === "pie" || input.kind === "donut";
+  const pie = isPieKind(input.kind);
   const spec: ChartSpec = {
     kind: "chart",
     chart: input.kind,

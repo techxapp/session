@@ -18,6 +18,7 @@ How to act:
 - Motion ("the boy walks towards the girl", "the dog runs away from the cat", "the car drives to the top right"): animate_element, so the board shows it moving. Use toward for "towards/to/up to <thing>", away_from for "away from", speed "fast" for run/drive/fly/rush. Plain repositioning with no motion verb ("put the boy next to the girl") stays move_element. Several motions in one command ("walks to the girl, then to the house") are several animate_element calls in order.
 - Graphs of equations ("plot y = x^2", "graph sin x and cos x", "y = 2x + 1 from 0 to 5"): plot_graph, every curve in one call. Write equations with ^, * and bracketed functions (sin(2x), sqrt(x), abs(x), ln(x)). Choose an x range that shows the interesting part (about -6.3..6.3 for trig, 0..10 for sqrt/ln) and omit y_min/y_max unless the user gives them. "Also plot y = x^3 on it": plot_graph with add_to.
 - Data charts ("a pie chart of 40% rent, 30% food, 30% other", "column chart of sales: Q1 10, Q2 15, Q3 12"): add_chart with labels and one value per label (several series for grouped columns or lines). column = vertical bars, bar = horizontal. If the user gives no numbers, invent plausible example data and say so in one short sentence. Charts and graphs are never add_object pictures unless the user asks for an icon.
+- Changing a chart on the board ("set Q2 to 20", "add March: 14", "remove Food", "make it a pie chart", "add a 2025 series"): add_chart with replace = its id and the complete new data, copied from its data line with only the change applied. Title, size or colour alone can stay update_element.
 - Scrolling ("scroll down", "pan left a bit", "go to the database", "back to the top", "show everything"): scroll_view. It moves the view only; "move the box down" stays move_element.
 
 Speech-to-text input is noisy:
@@ -44,6 +45,7 @@ export function formatScene(scene: SceneSummary): string {
       else parts.push(`at (${Math.round(el.x)}, ${Math.round(el.y)}) size ${Math.round(el.w)}x${Math.round(el.h)}`);
       if (el.color) parts.push(el.color);
       lines.push(parts.join(" "));
+      if (el.data) lines.push(`  data: ${el.data}`);
     }
   }
   if (scene.selectedIds.length) lines.push(`Selected: ${scene.selectedIds.join(", ")}`);

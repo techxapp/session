@@ -241,6 +241,21 @@ class Plot(unittest.TestCase):
         got = rule_command("add a box labelled chart", SCENE)
         self.assertEqual(got and got[0], "fast")
 
+    def test_chart_edits_need_llm(self):
+        chart = {
+            "id": "c",
+            "type": "chart",
+            "label": "Spending",
+            "data": 'pie; labels ["Rent","Eating out","Q2"]; series "2024" [40,30,30]; unit "k"; colors blue, red, green',
+        }
+        scene = {**SCENE, "elements": [*SCENE["elements"], chart]}
+        for text in ["set Q2 to 20", "remove eating out", "make 2024 bigger"]:
+            with self.subTest(text):
+                self.assertEqual(rule_command(text, scene), ("llm", None, "graph needs the LLM"))
+        self.assertIsNone(rule_command("set Q2 to 20", SCENE))  # no chart on the board
+        self.assertIsNone(rule_command("make it k", scene))  # the unit is not a name
+        self.assertEqual(rule_command("make the cache red", scene)[0], "fast")
+
 
 if __name__ == "__main__":
     unittest.main()

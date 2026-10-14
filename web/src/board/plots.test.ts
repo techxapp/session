@@ -261,3 +261,100 @@ describe("hover readout", () => {
     expect(renderChartSvg(spec)).toContain("100%"); // a single full slice is still drawn
   });
 });
+
+describe("editing a chart (add_chart replace)", () => {
+  const sales = {
+    kind: "column",
+    title: "Sales",
+    unit: "$",
+    labels: ["Q1", "Q2", "Q3"],
+    series: [
+      { name: "2024", values: [10, 15, 12] },
+      { name: "2025", values: [11, 18, 9] },
+    ],
+    colors: ["green", "orange"],
+  };
+
+  it("shows the data in the scene summary", () => {
+    const els = run([["add_chart", { id: "c", ...sales }]]);
+    expect(summarize(els, [], [], { x: 0, y: 0, w: 1600, h: 900 }).elements[0].data).toBe(
+      'column; labels ["Q1","Q2","Q3"]; series "2024" [10,15,12]; series "2025" [11,18,9]; unit "$"; colors green, orange',
+    );
+  });
+
+  it("redraws in place: same id, position and arrows; title, unit and colours kept by series name", () => {
+    const c = ctx();
+    let els = run(
+      [
+        ["add_chart", { id: "c", ...sales }],
+        ["add_shape", { id: "box", kind: "rectangle", placement: { relative_to: "c", side: "right" } }],
+        ["add_arrow", { id: "a", from: "box", to: "c" }],
+      ],
+      c,
+    );
+    const before = byId(els, "c");
+    els = run(
+      [
+        [
+          "add_chart",
+          {
+            replace: "c",
+            kind: "line",
+            labels: ["Q1", "Q2", "Q3", "Q4"],
+            series: [
+              { name: "2025", values: [11, 20, 9, 14] },
+              { name: "2026", values: [1, 2, 3, 4] },
+              { name: "2024", values: [10, 15, 12, 13] },
+            ],
+          },
+        ],
+      ],
+      c,
+      els,
+    );
+    const after = byId(els, "c");
+    expect(els.filter((e) => plotOf(e))).toHaveLength(1);
+    expect([after.x, after.y, after.width, after.height]).toEqual([before.x, before.y, before.width, before.height]);
+    expect(after.type === "image" && before.type === "image" && after.fileId !== before.fileId).toBe(true);
+    expect(plotOf(after)).toMatchObject({
+      chart: "line",
+      title: "Sales",
+      unit: "$",
+      labels: ["Q1", "Q2", "Q3", "Q4"],
+      colors: ["#e8590c", "#1971c2", "#2f9e44"], // 2025 orange, new 2026 the first free default (blue), 2024 green
+    });
+    expect(after.boundElements?.some((b) => b.id === "a")).toBe(true);
+    expect(c.recentIds[0]).toBe("c");
+  });
+
+  it("keeps pie slice colours by label, resizes around the centre and clears a title with ''", () => {
+    const c = ctx();
+    let els = run(
+      [["add_chart", { id: "p", kind: "pie", title: "Spend", labels: ["Rent", "Food", "Other"], series: [{ values: [40, 30, 30] }] }]],
+      c,
+    );
+    const before = byId(els, "p");
+    const old = plotOf(before) as ChartSpec;
+    els = run(
+      [["add_chart", { replace: "p", kind: "donut", title: "", size: "large", labels: ["Rent", "Other"], series: [{ values: [60, 40] }] }]],
+      c,
+      els,
+    );
+    const after = byId(els, "p");
+    expect(plotOf(after)).toMatchObject({ chart: "donut", colors: [old.colors[0], old.colors[2]], w: 640, h: 480 });
+    expect((plotOf(after) as ChartSpec).title).toBeUndefined();
+    expect(after.x + after.width / 2).toBeCloseTo(before.x + before.width / 2);
+    expect(after.width).toBe(640);
+  });
+
+  it("gives fresh colours when switching between pie and series charts, and refuses non-charts", () => {
+    const c = ctx();
+    let els = run([["add_chart", { id: "c", ...sales }]], c);
+    els = run([["add_chart", { replace: "c", kind: "pie", labels: ["Q1", "Q2", "Q3"], series: [{ values: [1, 2, 3] }] }]], c, els);
+    expect((plotOf(byId(els, "c")) as ChartSpec).colors).toHaveLength(3);
+    els = run([["plot_graph", { id: "g", equations: ["x"] }]], c, els);
+    expect(() => run([["add_chart", { replace: "g", kind: "pie", labels: ["A"], series: [{ values: [1] }] }]], c, els)).toThrow(
+      /Only a data chart/,
+    );
+  });
+});

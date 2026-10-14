@@ -193,6 +193,9 @@ export const CHART_KINDS = ["column", "bar", "line", "area", "pie", "donut"] as 
 export const AddChart = z
   .object({
     id: NewId.optional(),
+    replace: ElementId.optional().describe(
+      "To edit a chart: its id. It is redrawn in place with this data (give every label and value, starting from the scene's data). Omitted title/unit/colors/size are kept.",
+    ),
     kind: z
       .enum(CHART_KINDS)
       .describe("'column' = vertical bars, 'bar' = horizontal bars, 'line', 'area', 'pie', 'donut' (pie with a hole)."),
@@ -309,7 +312,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionName, string> = {
   plot_graph:
     "Plot a graph of one or more equations y = f(x) (e.g. 'y = x^2', 'sin(x)') on labelled axes; hovering it shows the coordinates. Or add curves to an existing graph (add_to).",
   add_chart:
-    "Draw a data chart from numbers: column, bar, line, area, pie or donut, with labels and one or more series; hovering it shows the values.",
+    "Draw a data chart from numbers: column, bar, line, area, pie or donut, with labels and one or more series; hovering it shows the values. Or edit one (replace).",
   move_element: "Move an existing element: nudge it in a direction or place it next to something / in a region.",
   animate_element:
     "Animate an existing element moving (walk, run, drive, fly) towards or away from another element, in a direction, or to a place. Use instead of move_element when the user describes motion ('moves towards', 'walks to', 'runs away from').",

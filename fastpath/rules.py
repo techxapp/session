@@ -524,6 +524,23 @@ def has_plot(cmd: Command) -> bool:
     return bool(PLOT_WORDS & set(cmd.w)) or bool(EQUATION.search(cmd.text))
 
 
+CHART_NAME = re.compile(r'"((?:[^"\\]|\\.)*)"')
+
+
+def edits_chart(cmd: Command, scene: dict) -> bool:
+    """Names a category or series of a chart on the board ("set Q2 to 20", "remove food"): add_chart replace."""
+    for el in scene["elements"]:
+        if el["type"] != "chart" or not el.get("data"):
+            continue
+        names = CHART_NAME.findall(el["data"].split("; unit ")[0])  # labels and series names, not the unit
+        for name in names:
+            words = re.findall(r"[a-z0-9]+", name.lower())
+            n = len(words)
+            if n and any(cmd.w[i : i + n] == words for i in range(len(cmd.w) - n + 1)):
+                return True
+    return False
+
+
 TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, scroll, move, animate]
 
 
@@ -555,6 +572,6 @@ def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] |
         return "llm", None, "scroll needs the LLM"
     if has_diagram(cmd):  # nor generate_diagram ("org chart" lands here, not below)
         return "llm", None, "diagram needs the LLM"
-    if has_plot(cmd):  # nor plot_graph / add_chart
+    if has_plot(cmd) or edits_chart(cmd, scene):  # nor plot_graph / add_chart
         return "llm", None, "graph needs the LLM"
     return None

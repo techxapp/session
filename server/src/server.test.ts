@@ -156,6 +156,15 @@ describe("prompt", () => {
     expect(msg).toContain("Selected: api");
     expect(msg).toContain("<command>make it blue</command>");
   });
+
+  it("lists a chart's data under it, so the model can redraw it with a change", () => {
+    const data = 'pie; labels ["Rent","Food"]; series [60,40]; colors blue, red';
+    const msg = buildUserMessage("set food to 50", {
+      ...scene,
+      elements: [{ id: "c", type: "chart", label: "Spend", x: 0, y: 0, w: 480, h: 360, data }],
+    });
+    expect(msg).toContain(`- c: chart "Spend" at (0, 0) size 480x360\n  data: ${data}`);
+  });
 });
 
 describe("POST /api/command", () => {
