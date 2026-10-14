@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Excalidraw, MainMenu, THEME } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { BoardAction, CommandEvent, HealthInfo } from "@board/shared";
+import type { BoardAction, HealthInfo } from "@board/shared";
 import { Settings2 } from "lucide-react";
 import { checkHealth } from "./api";
 import { loadObjectFiles } from "./board/objects";
 import { loadPlotFiles } from "./board/plots";
 import { useCommandRunner } from "./board/useCommandRunner";
 import { ActivityPanel } from "./components/ActivityPanel";
+import { ChartEditor } from "./components/ChartEditor";
 import { CommandDock } from "./components/CommandDock";
 import { PlotHover } from "./components/PlotHover";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -142,15 +143,9 @@ export default function App() {
     if (!import.meta.env.DEV || !api) return;
     (window as unknown as { __board: unknown }).__board = {
       api,
-      apply: (text: string, actions: BoardAction[]) => {
-        async function* events(): AsyncGenerator<CommandEvent> {
-          for (const action of actions) yield { type: "action", action, ms: 0 };
-          yield { type: "done", ms: 0, model: "dev", actions: actions.length };
-        }
-        return runner.consume(text, events(), new AbortController());
-      },
+      apply: (text: string, actions: BoardAction[]) => runner.applyActions(text, actions, "dev"),
     };
-  }, [api, runner.consume]);
+  }, [api, runner.applyActions]);
 
   return (
     <div className="app" data-theme={theme}>
@@ -188,6 +183,8 @@ export default function App() {
       </Excalidraw>
 
       <PlotHover api={api} />
+
+      <ChartEditor api={api} onApply={runner.applyActions} />
 
       {boardEmpty && runner.log.length === 0 && (
         <div className="empty-state" aria-hidden>

@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { CommandEvent, CommandSource, ModelConfig, ObjectMode } from "@board/shared";
+import type { BoardAction, CommandEvent, CommandSource, ModelConfig, ObjectMode } from "@board/shared";
 import { streamCommand } from "../api";
 import { playAnimation } from "./animate";
 import { ActionError, applyAction } from "./executor";
@@ -180,13 +180,25 @@ export function useCommandRunner(api: ExcalidrawImperativeAPI | null, getConfig:
     [api, consume, getConfig],
   );
 
+  /** Apply ready-made actions as one command (one undo step, one log entry): manual edits and the dev hook. */
+  const applyActions = useCallback(
+    (text: string, actions: BoardAction[], model = "manual") => {
+      async function* events(): AsyncGenerator<CommandEvent> {
+        for (const action of actions) yield { type: "action", action, ms: 0 };
+        yield { type: "done", ms: 0, model, actions: actions.length };
+      }
+      return consume(text, events(), new AbortController());
+    },
+    [consume],
+  );
+
   const cancel = useCallback(() => {
     inflight.current?.abort();
     inflight.current = null;
     setRunning(false);
   }, []);
 
-  return { log, running, run, cancel, consume, undo };
+  return { log, running, run, cancel, consume, applyActions, undo };
 }
 
 /**
