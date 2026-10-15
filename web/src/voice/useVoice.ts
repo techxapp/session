@@ -80,6 +80,105 @@ export class WakeDetector {
 /** A finished line worth running: noise can complete a line of only punctuation ("." or "..."). */
 export const isCommand = (text: string) => /[\p{L}\p{N}]/u.test(text);
 
+/**
+ * Words a spoken command doesn't end on: when a final line ends with one ("draw a box and", "put it next to"),
+ * the speaker most likely paused mid-command, so the line is held and the next one joined to it. Left out on
+ * purpose: words that also end real commands ("zoom in", "scroll up", "start over", "put it below", "delete that").
+ */
+export const JOIN_WORDS = new Set(
+  (
+    "and or but plus then with without to into onto from of between beside besides near toward towards " +
+    "a an the some another its their my your our called named labelled labeled saying titled is are as than for by at on via"
+  ).split(" "),
+);
+/** How long a held line waits for the speaker to carry on (no new speech) before it runs as it is. */
+export const HOLD_MS = 1500;
+/** How long it waits while the next line is being spoken (in case that line never completes). */
+export const HOLD_SPEAKING_MS = 8000;
+
+/** Does this finished line look cut off mid-command (ends on a JOIN_WORD, a comma, dash, colon or "...")? */
+export function looksIncomplete(text: string): boolean {
+  const t = text.trim();
+  if (/(,|:|;|-|\u2013|\u2014|\.\.\.|\u2026)$/.test(t)) return true;
+  const last =
+    t
+      .replace(/[.?!]+$/, "")
+      .split(/\s+/)
+      .pop()
+      ?.toLowerCase() ?? "";
+  return JOIN_WORDS.has(last);
+}
+
+/** "Draw a box and." + "Next to the database." -> "Draw a box and Next to the database." (case is kept: it may be a name). */
+export function joinLines(held: string, next: string): string {
+  return `${dropStop(held)} ${next.trim()}`.trim();
+}
+
+const dropStop = (text: string) => text.trim().replace(/(\.\.\.|\u2026|[.?!])$/, "");
+
+/**
+ * Turns finished speech lines into commands, holding a line that looksIncomplete until the next one arrives
+ * (they are joined) or the speaker stays quiet for HOLD_MS. `show` gets what the command bar should display.
+ */
+export class LineJoiner {
+  private held?: string;
+  private timer?: ReturnType<typeof setTimeout>;
+
+  constructor(
+    private run: (text: string) => void,
+    private show: (text: string) => void,
+  ) {}
+
+  final(text: string) {
+    if (!isCommand(text)) {
+      if (this.held) this.wait(HOLD_MS); // noise ended a line; keep waiting for real words
+      return;
+    }
+    const line = this.held ? joinLines(this.held, text) : text.trim();
+    this.clear();
+    if (looksIncomplete(line)) {
+      this.held = dropStop(line);
+      this.show(`${this.held} \u2026`);
+      this.wait(HOLD_MS);
+    } else {
+      this.show("");
+      this.run(line);
+    }
+  }
+
+  /** The next line is being spoken: show it after the held part and wait for it to finish. */
+  partial(text: string) {
+    if (!this.held) return this.show(text);
+    this.show(joinLines(this.held, text));
+    this.wait(HOLD_SPEAKING_MS);
+  }
+
+  /** Run whatever is held now (the mic stopped, the session dozed or ended). */
+  flush() {
+    const line = this.held;
+    this.clear();
+    if (line) {
+      this.show("");
+      this.run(line);
+    }
+  }
+
+  /** Drop whatever is held without running it. */
+  clear() {
+    clearTimeout(this.timer);
+    this.timer = this.held = undefined;
+  }
+
+  get holding() {
+    return this.held !== undefined;
+  }
+
+  private wait(ms: number) {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush(), ms);
+  }
+}
+
 interface Session {
   speech: SpeechConfig; // read once per mic start
   media?: MediaStream;
@@ -90,6 +189,7 @@ interface Session {
   line?: string; // id of the line being spoken
   terms?: string; // key terms last sent
   idle?: number; // timer that dozes the session
+  joiner: LineJoiner; // holds a line that ended mid-command until the next one joins it
   error?: string;
   closed: boolean;
 }
@@ -139,7 +239,8 @@ function closeMic(s: Session) {
 
 /**
  * Streams the mic to the speech provider `getSpeech` picks (read on each start). `onFinal` gets each completed
- * spoken line; `getKeyterms` is read when a new line starts, so recognition follows the labels on the board.
+ * spoken command (a line that ends mid-command, e.g. on "and", is joined with the next; see LineJoiner);
+ * `getKeyterms` is read when a new line starts, so recognition follows the labels on the board.
  * After `idleMs` with nothing heard the session dozes: the speech socket (or browser recognition) closes, the mic
  * stays open, and the first speech-loud audio reconnects, sending the last 2 s first so those words still count.
  */
@@ -156,6 +257,7 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
   const voice = useMemo(() => {
     /** Release everything the session holds; safe to call more than once. */
     const end = (s: Session) => {
+      s.joiner.flush(); // the mic stopped (or failed) after a line ending in "and...": run what was said
       s.closed = true;
       window.clearTimeout(s.idle);
       s.frame = undefined;
@@ -194,11 +296,10 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
             s.ws.send(JSON.stringify({ type: "keyterms", terms }));
           }
         }
-        setInterim(msg.text);
+        s.joiner.partial(msg.text);
       } else if (msg.type === "final") {
         heard(s);
-        setInterim("");
-        if (isCommand(msg.text)) cb.current.onFinal(msg.text);
+        s.joiner.final(msg.text);
       } else if (msg.type === "error") s.error = msg.message;
       else if (msg.type === "stopped") end(s);
     };
@@ -245,6 +346,7 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
     const doze = async (s: Session) => {
       if (session.current !== s || s.closed) return;
       setState("dozing");
+      s.joiner.flush();
       setInterim("");
       const wake = new WakeDetector(s.speech.wakeRms);
       s.frame = (f) => {
@@ -286,7 +388,14 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
 
     const start = async () => {
       if (session.current) return;
-      const s: Session = { closed: false, speech: cb.current.getSpeech() };
+      const s: Session = {
+        closed: false,
+        speech: cb.current.getSpeech(),
+        joiner: new LineJoiner(
+          (text) => cb.current.onFinal(text),
+          (text) => session.current === s && setInterim(text),
+        ),
+      };
       session.current = s;
       setError(null);
       setState("starting");
@@ -327,7 +436,15 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
     return { end, start, stop, toggle: () => (session.current ? stop() : void start()) };
   }, []);
 
-  useEffect(() => () => void (session.current && voice.end(session.current)), [voice]);
+  useEffect(
+    () => () => {
+      const s = session.current;
+      if (!s) return;
+      s.joiner.clear(); // unmounting: don't run a held half-command
+      voice.end(s);
+    },
+    [voice],
+  );
 
   return { state, interim, error, toggle: voice.toggle };
 }
