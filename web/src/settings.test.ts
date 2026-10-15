@@ -71,4 +71,26 @@ describe("settings -> speech config", () => {
     expect(speechConfig(s, health)).toMatchObject({ idleMs: 0, wakeRms: 10 ** (-50 / 20) });
     expect(speechConfig(with_({ speech: { keys: {}, idleSeconds: 90 } }), health).idleMs).toBe(90_000);
   });
+
+  it("sends AssemblyAI turn detection only for AssemblyAI, clamped", () => {
+    const speech = { keys: {}, assemblyTurn: { confidence: 2, minSilenceMs: 750 } };
+    expect(speechConfig(with_({ speech: { ...speech, provider: "assemblyai" } }), health).turn).toEqual({
+      confidence: 1,
+      minSilenceMs: 750,
+    });
+    expect(speechConfig(with_({ speech: { ...speech, provider: "deepgram" } }), health).turn).toBeUndefined();
+    expect(speechConfig(with_({ speech: { keys: {}, provider: "assemblyai" } }), health).turn).toEqual({});
+  });
+
+  it("line joining waits: defaults, 0 = off, clamped", () => {
+    expect(speechConfig(DEFAULT_SETTINGS, health)).toMatchObject({ holdMs: 1500, holdSpeakingMs: 8000 });
+    expect(speechConfig(with_({ speech: { keys: {}, holdMs: 0, holdSpeakingMs: 3000 } }), health)).toMatchObject({
+      holdMs: 0,
+      holdSpeakingMs: 3000,
+    });
+    expect(speechConfig(with_({ speech: { keys: {}, holdMs: 99_999, holdSpeakingMs: 10 } }), health)).toMatchObject({
+      holdMs: 10_000,
+      holdSpeakingMs: 1000,
+    });
+  });
 });

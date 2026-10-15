@@ -1,8 +1,9 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BoardAction } from "@board/shared";
 import { applyAction, type ExecContext } from "../board/executor";
-import { PREROLL_FRAMES, WakeDetector, boardKeyterms, isCommand, rms } from "./useVoice";
+import { HOLD_MS, HOLD_SPEAKING_MS } from "../settings";
+import { LineJoiner, PREROLL_FRAMES, WakeDetector, boardKeyterms, isCommand, joinLines, looksIncomplete, rms } from "./useVoice";
 
 beforeAll(async () => {
   const { setCustomTextMetricsProvider } = await import("@excalidraw/excalidraw");
@@ -67,5 +68,115 @@ describe("WakeDetector", () => {
     for (let i = 0; i < PREROLL_FRAMES + 5; i++) wake.push(frame(i / 1000));
     expect(wake.frames).toHaveLength(PREROLL_FRAMES);
     expect(wake.frames[0][0]).toBeCloseTo(5 / 1000);
+  });
+});
+
+describe("looksIncomplete / joinLines", () => {
+  it("spots lines cut off mid-command", () => {
+    for (const t of [
+      "draw a box and",
+      "Draw a box and.",
+      "put it next to",
+      "add a note labelled",
+      "connect the API with",
+      "a circle,",
+      "add a box...",
+      "draw the",
+    ])
+      expect(looksIncomplete(t), t).toBe(true);
+    for (const t of ["draw a box", "Draw a blue box.", "zoom in", "scroll up", "delete that", "start over", "move it below", "undo"])
+      expect(looksIncomplete(t), t).toBe(false);
+  });
+
+  it("joins without the recogniser's full stop, keeping case", () => {
+    expect(joinLines("Draw a box and.", "Next to the database.")).toBe("Draw a box and Next to the database.");
+    expect(joinLines("connect it to", "Postgres")).toBe("connect it to Postgres");
+    expect(joinLines("draw a box and", "I want it red")).toBe("draw a box and I want it red");
+    expect(joinLines("add a box...", "a red one")).toBe("add a box a red one");
+  });
+});
+
+describe("LineJoiner", () => {
+  afterEach(() => vi.useRealTimers());
+  const setup = (waits?: { holdMs: number; holdSpeakingMs: number }) => {
+    vi.useFakeTimers();
+    const ran: string[] = [];
+    const shown: string[] = [];
+    const j = new LineJoiner(
+      (t) => ran.push(t),
+      (t) => shown.push(t),
+      waits,
+    );
+    return { j, ran, shown };
+  };
+
+  it("runs complete lines at once and skips noise", () => {
+    const { j, ran } = setup();
+    j.final("Draw a blue box.");
+    j.final("...");
+    expect(ran).toEqual(["Draw a blue box."]);
+  });
+
+  it("holds a line ending in a join word and joins the next one", () => {
+    const { j, ran, shown } = setup();
+    j.final("Draw a box and.");
+    expect(ran).toEqual([]);
+    expect(shown.at(-1)).toBe("Draw a box and \u2026");
+    j.partial("Next to");
+    expect(shown.at(-1)).toBe("Draw a box and Next to");
+    vi.advanceTimersByTime(HOLD_MS + 100); // still speaking: keeps waiting
+    expect(ran).toEqual([]);
+    j.final("Next to the database.");
+    expect(ran).toEqual(["Draw a box and Next to the database."]);
+    expect(j.holding).toBe(false);
+  });
+
+  it("keeps holding while the joined line is still incomplete", () => {
+    const { j, ran } = setup();
+    j.final("add a note labelled");
+    j.final("deploy and");
+    expect(ran).toEqual([]);
+    j.final("ship it");
+    expect(ran).toEqual(["add a note labelled deploy and ship it"]);
+  });
+
+  it("runs the held line as is after a silence, or when flushed", () => {
+    const { j, ran } = setup();
+    j.final("draw a circle and");
+    vi.advanceTimersByTime(HOLD_MS - 1);
+    expect(ran).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(ran).toEqual(["draw a circle and"]);
+
+    j.final("connect it with");
+    j.partial("the");
+    vi.advanceTimersByTime(HOLD_SPEAKING_MS);
+    expect(ran.at(-1)).toBe("connect it with");
+
+    j.final("put it next to");
+    j.flush();
+    expect(ran.at(-1)).toBe("put it next to");
+    j.final("draw a box and");
+    j.clear();
+    vi.runAllTimers();
+    expect(ran).toHaveLength(3);
+  });
+
+  it("uses the configured waits, and holdMs 0 turns joining off", () => {
+    const { j, ran } = setup({ holdMs: 500, holdSpeakingMs: 2000 });
+    j.final("draw a box and");
+    vi.advanceTimersByTime(499);
+    expect(ran).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(ran).toEqual(["draw a box and"]);
+    j.final("connect it to");
+    j.partial("the");
+    vi.advanceTimersByTime(2000);
+    expect(ran.at(-1)).toBe("connect it to");
+
+    const off = setup({ holdMs: 0, holdSpeakingMs: HOLD_SPEAKING_MS });
+    off.j.final("draw a box and");
+    expect(off.ran).toEqual(["draw a box and"]);
+    expect(off.j.holding).toBe(false);
   });
 });

@@ -83,7 +83,7 @@ The checkpoint is produced by `eval/make_train.py` + `eval/train_laya.py` (see `
 
 ### Optional: voice input (local Moonshine or cloud)
 
-The mic button in the command bar streams your microphone to `stt/server.py`, which runs [Moonshine](https://github.com/moonshine-ai/moonshine) speech recognition on the CPU. Nothing leaves the machine, there is no per-hour cost and it uses no GPU memory. While you talk, the words being recognised show in the command bar. When you pause, the finished sentence runs as a command, exactly as if you had typed it. Sentences spoken while a command is still running wait their turn instead of cancelling it. Labels on the board (such as "Postgres") are passed to the recogniser so it spells them the way the board does.
+The mic button in the command bar streams your microphone to `stt/server.py`, which runs [Moonshine](https://github.com/moonshine-ai/moonshine) speech recognition on the CPU. Nothing leaves the machine, there is no per-hour cost and it uses no GPU memory. While you talk, the words being recognised show in the command bar. When you pause, the finished sentence runs as a command, exactly as if you had typed it. If you pause mid-command, after a word like "and", "with", "to", "the" or "labelled", the app waits about 1.5 seconds for the rest (the command bar shows the sentence with "…") and joins the two parts into one command. If you don't carry on, the part you said runs as it is. Both waits are under *Join a command split by a pause* in Settings: *Wait for the rest* (default 1,500 ms; 0 turns joining off) and *Wait while still speaking* (default 8,000 ms, the limit once you've carried on). They apply the next time the mic starts, with no server restart. Sentences spoken while a command is still running wait their turn instead of cancelling it. Labels on the board (such as "Postgres") are passed to the recogniser so it spells them the way the board does.
 
 Set it up once, in its own Python 3.10+ environment (no PyTorch needed):
 
@@ -109,6 +109,8 @@ DEEPGRAM_API_KEY=...             # or ASSEMBLYAI_API_KEY=...
 ```
 
 The Settings choice overrides `STT_PROVIDER` for that browser and applies the next time the mic starts. A `.env` key is only sent to its own service. Board labels are passed as key terms to both services. Deepgram takes them only when the mic starts; AssemblyAI is updated as the board changes. Audio goes to the service you pick, and it is billed by the minute while it is connected, which stops when listening pauses.
+
+With AssemblyAI, *AssemblyAI turn detection* in Settings sets when a pause ends a command: the end-of-turn confidence (0-1, default 0.4), the silence needed when the model is confident (default 400 ms) and the longest silence allowed (default 1280 ms). Leave a field empty to use AssemblyAI's default. If commands get cut in half when you pause mid-sentence, raise the minimum silence to around 700-800 ms. Every command then arrives that much later.
 
 **Browser.** The *Browser* choice uses the browser's own speech recognition (the Web Speech API). It needs no key, no sidecar and no server. It works in Chrome, Edge and Safari, but not Firefox, and Brave has no speech service. Chrome sends the audio to Google and Edge to Microsoft. It ignores board key terms. Browsers end recognition after a pause, so it restarts on its own, and a word spoken right at a restart can be lost.
 
