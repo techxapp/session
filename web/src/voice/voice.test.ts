@@ -2,18 +2,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BoardAction } from "@board/shared";
 import { applyAction, type ExecContext } from "../board/executor";
-import {
-  HOLD_MS,
-  HOLD_SPEAKING_MS,
-  LineJoiner,
-  PREROLL_FRAMES,
-  WakeDetector,
-  boardKeyterms,
-  isCommand,
-  joinLines,
-  looksIncomplete,
-  rms,
-} from "./useVoice";
+import { HOLD_MS, HOLD_SPEAKING_MS } from "../settings";
+import { LineJoiner, PREROLL_FRAMES, WakeDetector, boardKeyterms, isCommand, joinLines, looksIncomplete, rms } from "./useVoice";
 
 beforeAll(async () => {
   const { setCustomTextMetricsProvider } = await import("@excalidraw/excalidraw");
@@ -108,13 +98,14 @@ describe("looksIncomplete / joinLines", () => {
 
 describe("LineJoiner", () => {
   afterEach(() => vi.useRealTimers());
-  const setup = () => {
+  const setup = (waits?: { holdMs: number; holdSpeakingMs: number }) => {
     vi.useFakeTimers();
     const ran: string[] = [];
     const shown: string[] = [];
     const j = new LineJoiner(
       (t) => ran.push(t),
       (t) => shown.push(t),
+      waits,
     );
     return { j, ran, shown };
   };
@@ -169,5 +160,23 @@ describe("LineJoiner", () => {
     j.clear();
     vi.runAllTimers();
     expect(ran).toHaveLength(3);
+  });
+
+  it("uses the configured waits, and holdMs 0 turns joining off", () => {
+    const { j, ran } = setup({ holdMs: 500, holdSpeakingMs: 2000 });
+    j.final("draw a box and");
+    vi.advanceTimersByTime(499);
+    expect(ran).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(ran).toEqual(["draw a box and"]);
+    j.final("connect it to");
+    j.partial("the");
+    vi.advanceTimersByTime(2000);
+    expect(ran.at(-1)).toBe("connect it to");
+
+    const off = setup({ holdMs: 0, holdSpeakingMs: HOLD_SPEAKING_MS });
+    off.j.final("draw a box and");
+    expect(off.ran).toEqual(["draw a box and"]);
+    expect(off.j.holding).toBe(false);
   });
 });

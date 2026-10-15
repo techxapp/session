@@ -86,10 +86,18 @@ export interface SpeechSettings {
   wake?: WakeSensitivity;
   /** AssemblyAI turn detection; a field left out uses AssemblyAI's default. */
   assemblyTurn?: AssemblyTurn;
+  /** Line joining: how long a line cut off mid-command waits for the rest (0 = don't join); default HOLD_MS. */
+  holdMs?: number;
+  /** ... and how long once the speaker has carried on; default HOLD_SPEAKING_MS. */
+  holdSpeakingMs?: number;
 }
 
 export type WakeSensitivity = "high" | "normal" | "low";
 export const IDLE_SECONDS = 10;
+/** Line joining defaults (see useVoice.ts#LineJoiner): wait after a line ending in "and"/"with"/..., and while the rest is spoken. */
+export const HOLD_MS = 1500;
+export const HOLD_SPEAKING_MS = 8000;
+export const HOLD_LIMITS = { holdMs: [0, 10_000], holdSpeakingMs: [1000, 30_000] } as const;
 /** RMS level (dBFS) of a ~100 ms mic frame that counts as someone speaking, after the browser's noise suppression. */
 export const WAKE_DBFS: Record<WakeSensitivity, number> = { high: -50, normal: -42, low: -34 };
 
@@ -103,6 +111,9 @@ export interface SpeechConfig {
   wakeRms: number;
   /** AssemblyAI turn detection to send with `start` (only for assemblyai). */
   turn?: AssemblyTurn;
+  /** Line joining waits (ms); holdMs 0 = run every line as it ends. */
+  holdMs: number;
+  holdSpeakingMs: number;
 }
 
 const STORAGE_KEY = "voice-board:settings:v1";
@@ -161,6 +172,9 @@ export function effectiveModel(s: Settings, health: HealthInfo | null): string |
   return onEnvEndpoint ? health.model : c.models[0];
 }
 
+const clampMs = (v: number | undefined, fallback: number, [lo, hi]: readonly [number, number]) =>
+  typeof v === "number" && Number.isFinite(v) ? Math.round(Math.min(hi, Math.max(lo, v))) : fallback;
+
 /** The speech provider the mic will use, the browser's key for it (else the server's .env key) and the idle pause. */
 export function speechConfig(s: Settings, health: HealthInfo | null): SpeechConfig {
   const provider = s.speech.provider ?? health?.stt.provider ?? "moonshine";
@@ -170,6 +184,8 @@ export function speechConfig(s: Settings, health: HealthInfo | null): SpeechConf
     idleMs: Math.max(0, s.speech.idleSeconds ?? IDLE_SECONDS) * 1000,
     wakeRms: 10 ** (WAKE_DBFS[s.speech.wake ?? "normal"] / 20),
     turn: provider === "assemblyai" ? cleanAssemblyTurn(s.speech.assemblyTurn) : undefined,
+    holdMs: clampMs(s.speech.holdMs, HOLD_MS, HOLD_LIMITS.holdMs),
+    holdSpeakingMs: clampMs(s.speech.holdSpeakingMs, HOLD_SPEAKING_MS, HOLD_LIMITS.holdSpeakingMs),
   };
 }
 

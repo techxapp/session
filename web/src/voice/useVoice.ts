@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { isTopLevel, labelOf } from "../board/executor";
 import { CLOUD_STT } from "@board/shared";
-import type { SpeechConfig } from "../settings";
+import { HOLD_MS, HOLD_SPEAKING_MS, type SpeechConfig } from "../settings";
 // SttMessage: from the speech servers (the Moonshine sidecar or the API server's cloud relay) or the browser's own.
 import { browserRecognition, listenInBrowser, type RecognitionCtor, type SttMessage } from "./browserSpeech";
 
@@ -91,10 +91,6 @@ export const JOIN_WORDS = new Set(
     "a an the some another its their my your our called named labelled labeled saying titled is are as than for by at on via"
   ).split(" "),
 );
-/** How long a held line waits for the speaker to carry on (no new speech) before it runs as it is. */
-export const HOLD_MS = 1500;
-/** How long it waits while the next line is being spoken (in case that line never completes). */
-export const HOLD_SPEAKING_MS = 8000;
 
 /** Does this finished line look cut off mid-command (ends on a JOIN_WORD, a comma, dash, colon or "...")? */
 export function looksIncomplete(text: string): boolean {
@@ -118,7 +114,8 @@ const dropStop = (text: string) => text.trim().replace(/(\.\.\.|\u2026|[.?!])$/,
 
 /**
  * Turns finished speech lines into commands, holding a line that looksIncomplete until the next one arrives
- * (they are joined) or the speaker stays quiet for HOLD_MS. `show` gets what the command bar should display.
+ * (they are joined) or the speaker stays quiet for `holdMs` (`holdSpeakingMs` once a partial shows they carried
+ * on, in case that line never completes). `holdMs` 0 = never hold. `show` gets what the command bar should display.
  */
 export class LineJoiner {
   private held?: string;
@@ -127,19 +124,20 @@ export class LineJoiner {
   constructor(
     private run: (text: string) => void,
     private show: (text: string) => void,
+    private waits: { holdMs: number; holdSpeakingMs: number } = { holdMs: HOLD_MS, holdSpeakingMs: HOLD_SPEAKING_MS },
   ) {}
 
   final(text: string) {
     if (!isCommand(text)) {
-      if (this.held) this.wait(HOLD_MS); // noise ended a line; keep waiting for real words
+      if (this.held) this.wait(this.waits.holdMs); // noise ended a line; keep waiting for real words
       return;
     }
     const line = this.held ? joinLines(this.held, text) : text.trim();
     this.clear();
-    if (looksIncomplete(line)) {
+    if (this.waits.holdMs > 0 && looksIncomplete(line)) {
       this.held = dropStop(line);
       this.show(`${this.held} \u2026`);
-      this.wait(HOLD_MS);
+      this.wait(this.waits.holdMs);
     } else {
       this.show("");
       this.run(line);
@@ -150,7 +148,7 @@ export class LineJoiner {
   partial(text: string) {
     if (!this.held) return this.show(text);
     this.show(joinLines(this.held, text));
-    this.wait(HOLD_SPEAKING_MS);
+    this.wait(this.waits.holdSpeakingMs);
   }
 
   /** Run whatever is held now (the mic stopped, the session dozed or ended). */
@@ -388,12 +386,14 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
 
     const start = async () => {
       if (session.current) return;
+      const speech = cb.current.getSpeech();
       const s: Session = {
         closed: false,
-        speech: cb.current.getSpeech(),
+        speech,
         joiner: new LineJoiner(
           (text) => cb.current.onFinal(text),
           (text) => session.current === s && setInterim(text),
+          speech,
         ),
       };
       session.current = s;

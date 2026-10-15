@@ -25,6 +25,9 @@ import {
   type Settings,
   type SpeechSettings,
   type WakeSensitivity,
+  HOLD_LIMITS,
+  HOLD_MS,
+  HOLD_SPEAKING_MS,
   IDLE_SECONDS,
 } from "../settings";
 import { modelName } from "./StatusPill";
@@ -345,6 +348,8 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
           </div>
         )}
 
+        <JoinFields speech={settings.speech} setSpeech={setSpeech} />
+
         {CLOUD_STT.includes(speech.provider) && (
           <label className="field">
             <span className="field-label">{speechName(speech.provider)} API key</span>
@@ -395,40 +400,107 @@ const TURN_FIELDS: { key: keyof AssemblyTurn; label: string; unit: string; step:
 
 /** AssemblyAI turn detection: empty = AssemblyAI's default (shown as the placeholder). */
 function AssemblyTurnFields({ value, onChange }: { value: AssemblyTurn; onChange: (t: AssemblyTurn | undefined) => void }) {
-  const set = (key: keyof AssemblyTurn, raw: string) => {
-    const n = raw.trim() === "" ? undefined : Number(raw);
-    const next = { ...value, [key]: n !== undefined && Number.isFinite(n) ? n : undefined };
-    const kept = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)) as AssemblyTurn;
+  const set = (key: keyof AssemblyTurn, n: number | undefined) => {
+    const kept = Object.fromEntries(Object.entries({ ...value, [key]: n }).filter(([, v]) => v !== undefined)) as AssemblyTurn;
     onChange(Object.keys(kept).length ? kept : undefined);
   };
   return (
     <fieldset className="field">
       <legend>AssemblyAI turn detection</legend>
-      <div className="turn-grid">
-        {TURN_FIELDS.map((f) => {
-          const [min, max] = ASSEMBLY_TURN_LIMITS[f.key];
-          return (
-            <label key={f.key} className="turn-field" title={f.title}>
-              <span>
-                {f.label} <small>({f.unit})</small>
-              </span>
-              <input
-                type="number"
-                min={min}
-                max={max}
-                step={f.step}
-                value={value[f.key] ?? ""}
-                onChange={(e) => set(f.key, e.target.value)}
-                placeholder={String(ASSEMBLY_TURN_DEFAULTS[f.key])}
-              />
-            </label>
-          );
-        })}
+      <div className="number-grid">
+        {TURN_FIELDS.map((f) => (
+          <NumberField
+            key={f.key}
+            label={f.label}
+            unit={f.unit}
+            step={f.step}
+            title={f.title}
+            limits={ASSEMBLY_TURN_LIMITS[f.key]}
+            value={value[f.key]}
+            fallback={ASSEMBLY_TURN_DEFAULTS[f.key]}
+            onChange={(n) => set(f.key, n)}
+          />
+        ))}
       </div>
       <span className="field-note">
         Empty = AssemblyAI's default (shown greyed). Longer silences stop commands being cut at pauses but make every command arrive later.
       </span>
     </fieldset>
+  );
+}
+
+/** Line joining waits (useVoice.ts#LineJoiner): empty = the default shown greyed. */
+function JoinFields({ speech, setSpeech }: { speech: SpeechSettings; setSpeech: (patch: Partial<SpeechSettings>) => void }) {
+  return (
+    <fieldset className="field">
+      <legend>Join a command split by a pause</legend>
+      <div className="number-grid two">
+        <NumberField
+          label="Wait for the rest"
+          unit="ms"
+          step={250}
+          title='After a line that ends on "and", "with", "to", "the"... wait this long for more speech before running it as it is. 0 = never join'
+          limits={HOLD_LIMITS.holdMs}
+          value={speech.holdMs}
+          fallback={HOLD_MS}
+          onChange={(holdMs) => setSpeech({ holdMs })}
+        />
+        <NumberField
+          label="Wait while still speaking"
+          unit="ms"
+          step={500}
+          title="Once you carry on speaking, wait up to this long for that part to finish"
+          limits={HOLD_LIMITS.holdSpeakingMs}
+          value={speech.holdSpeakingMs}
+          fallback={HOLD_SPEAKING_MS}
+          onChange={(holdSpeakingMs) => setSpeech({ holdSpeakingMs })}
+        />
+      </div>
+      <span className="field-note">
+        A line ending in "and", "with", "to", "the"... waits for the rest and both run as one command. 0 = never join.
+      </span>
+    </fieldset>
+  );
+}
+
+/** A number setting: empty = undefined (the default, shown as the placeholder). Clamped where it's used, not while typing. */
+function NumberField({
+  label,
+  unit,
+  step,
+  title,
+  limits: [min, max],
+  value,
+  fallback,
+  onChange,
+}: {
+  label: string;
+  unit: string;
+  step: number;
+  title: string;
+  limits: readonly [number, number];
+  value: number | undefined;
+  fallback: number;
+  onChange: (n: number | undefined) => void;
+}) {
+  return (
+    <label className="number-field" title={title}>
+      <span>
+        {label} <small>({unit})</small>
+      </span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value ?? ""}
+        onChange={(e) => {
+          const n = e.target.value.trim() === "" ? undefined : Number(e.target.value);
+          onChange(n !== undefined && Number.isFinite(n) ? n : undefined);
+        }}
+        placeholder={String(fallback)}
+      />
+    </label>
   );
 }
 

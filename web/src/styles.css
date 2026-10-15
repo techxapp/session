@@ -206,12 +206,15 @@ kbd {
   font-size: 11.5px;
   line-height: 1.45;
 }
-.turn-grid {
+.number-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
-.turn-field {
+.number-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.number-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -219,10 +222,10 @@ kbd {
   color: var(--text-muted);
   font-size: 11.5px;
 }
-.turn-field span {
+.number-field span {
   flex: 1;
 }
-.turn-field small {
+.number-field small {
   color: var(--text-faint);
 }
 .field-error {

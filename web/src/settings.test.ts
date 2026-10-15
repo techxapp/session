@@ -81,4 +81,16 @@ describe("settings -> speech config", () => {
     expect(speechConfig(with_({ speech: { ...speech, provider: "deepgram" } }), health).turn).toBeUndefined();
     expect(speechConfig(with_({ speech: { keys: {}, provider: "assemblyai" } }), health).turn).toEqual({});
   });
+
+  it("line joining waits: defaults, 0 = off, clamped", () => {
+    expect(speechConfig(DEFAULT_SETTINGS, health)).toMatchObject({ holdMs: 1500, holdSpeakingMs: 8000 });
+    expect(speechConfig(with_({ speech: { keys: {}, holdMs: 0, holdSpeakingMs: 3000 } }), health)).toMatchObject({
+      holdMs: 0,
+      holdSpeakingMs: 3000,
+    });
+    expect(speechConfig(with_({ speech: { keys: {}, holdMs: 99_999, holdSpeakingMs: 10 } }), health)).toMatchObject({
+      holdMs: 10_000,
+      holdSpeakingMs: 1000,
+    });
+  });
 });
