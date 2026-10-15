@@ -1,5 +1,7 @@
 import {
+  cleanAssemblyTurn,
   endpointKey,
+  type AssemblyTurn,
   type ApiStyle,
   type HealthInfo,
   type ModelConfig,
@@ -82,6 +84,8 @@ export interface SpeechSettings {
   idleSeconds?: number;
   /** How loud the mic must get to resume a paused session; default "normal". */
   wake?: WakeSensitivity;
+  /** AssemblyAI turn detection; a field left out uses AssemblyAI's default. */
+  assemblyTurn?: AssemblyTurn;
 }
 
 export type WakeSensitivity = "high" | "normal" | "low";
@@ -97,6 +101,8 @@ export interface SpeechConfig {
   idleMs: number;
   /** Linear RMS threshold that resumes a paused session. */
   wakeRms: number;
+  /** AssemblyAI turn detection to send with `start` (only for assemblyai). */
+  turn?: AssemblyTurn;
 }
 
 const STORAGE_KEY = "voice-board:settings:v1";
@@ -163,6 +169,7 @@ export function speechConfig(s: Settings, health: HealthInfo | null): SpeechConf
     apiKey: CLOUD_STT.includes(provider) ? s.speech.keys[provider] || undefined : undefined,
     idleMs: Math.max(0, s.speech.idleSeconds ?? IDLE_SECONDS) * 1000,
     wakeRms: 10 ** (WAKE_DBFS[s.speech.wake ?? "normal"] / 20),
+    turn: provider === "assemblyai" ? cleanAssemblyTurn(s.speech.assemblyTurn) : undefined,
   };
 }
 

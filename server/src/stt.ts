@@ -2,7 +2,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import type { FastifyBaseLogger } from "fastify";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
-import { CLOUD_STT, STT_PROVIDERS, type SttProvider } from "@board/shared";
+import { CLOUD_STT, STT_PROVIDERS, cleanAssemblyTurn, type AssemblyTurn, type SttProvider } from "@board/shared";
 
 /**
  * Cloud speech-to-text behind the WebSocket /api/stt. It speaks the same protocol as the Moonshine sidecar
@@ -174,7 +174,14 @@ interface Upstream {
   keyterms?: (terms: string[]) => object;
 }
 
-export function upstreamFor(provider: CloudStt, s: SttSettings, key: string, rate: number, terms: string[]): Upstream {
+export function upstreamFor(
+  provider: CloudStt,
+  s: SttSettings,
+  key: string,
+  rate: number,
+  terms: string[],
+  turn: AssemblyTurn = {},
+): Upstream {
   const model = s.models[provider];
   if (provider === "deepgram") {
     const q = new URLSearchParams({
@@ -200,6 +207,10 @@ export function upstreamFor(provider: CloudStt, s: SttSettings, key: string, rat
   const q = new URLSearchParams({ sample_rate: String(rate), encoding: "pcm_s16le", speech_model: model });
   if (model.startsWith("universal-streaming")) q.set("format_turns", "true");
   if (terms.length) q.set("keyterms_prompt", JSON.stringify(terms));
+  // Turn detection from the browser's Settings; unset ones stay at AssemblyAI's defaults.
+  if (turn.confidence !== undefined) q.set("end_of_turn_confidence_threshold", String(turn.confidence));
+  if (turn.minSilenceMs !== undefined) q.set("min_end_of_turn_silence_when_confident", String(turn.minSilenceMs));
+  if (turn.maxSilenceMs !== undefined) q.set("max_turn_silence", String(turn.maxSilenceMs));
   return {
     url: `${s.urls.assemblyai}?${q}`,
     headers: { Authorization: key },
@@ -247,7 +258,7 @@ function session(ws: WebSocket, s: SttSettings, log: FastifyBaseLogger, connect:
     const key = (typeof m.apiKey === "string" && m.apiKey.trim()) || s.keys[p];
     if (!key) return finish([{ type: "error", message: `No ${name} API key: add one in Settings or set ${KEY_VARS[p]} in .env.` }]);
     rate = Math.min(96000, Math.max(8000, Math.round(Number(m.sampleRate) || 16000)));
-    const cur = (u = upstreamFor(p, s, key, rate, cleanKeyterms(m.keyterms)));
+    const cur = (u = upstreamFor(p, s, key, rate, cleanKeyterms(m.keyterms), cleanAssemblyTurn(m.turn)));
     const sock = (up = connect(cur.url, cur.headers));
     log.info({ model: cur.model, rate }, "cloud speech session");
 

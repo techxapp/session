@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Eye, EyeOff, Plus, RefreshCw, Settings2, X } from "lucide-react";
-import { CLOUD_STT, type HealthInfo, type ObjectMode, type ReasoningEffort, type SttProvider, type ToolRouterMode } from "@board/shared";
+import {
+  ASSEMBLY_TURN_DEFAULTS,
+  ASSEMBLY_TURN_LIMITS,
+  CLOUD_STT,
+  type AssemblyTurn,
+  type HealthInfo,
+  type ObjectMode,
+  type ReasoningEffort,
+  type SttProvider,
+  type ToolRouterMode,
+} from "@board/shared";
 import { fetchModels } from "../api";
 import {
   SERVER,
@@ -345,6 +355,10 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
             />
           </label>
         )}
+
+        {speech.provider === "assemblyai" && (
+          <AssemblyTurnFields value={settings.speech.assemblyTurn ?? {}} onChange={(assemblyTurn) => setSpeech({ assemblyTurn })} />
+        )}
       </div>
 
       <footer className="settings-foot">
@@ -352,6 +366,69 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
         Saved in this browser (models per base URL) and used instead of the server's .env. Speech changes apply when the mic next starts.
       </footer>
     </div>
+  );
+}
+
+const TURN_FIELDS: { key: keyof AssemblyTurn; label: string; unit: string; step: number; title: string }[] = [
+  {
+    key: "confidence",
+    label: "End-of-turn confidence",
+    unit: "0-1",
+    step: 0.05,
+    title: "How sure the model must be that you finished (end_of_turn_confidence_threshold). Higher = waits for clearer endings",
+  },
+  {
+    key: "minSilenceMs",
+    label: "Min silence when confident",
+    unit: "ms",
+    step: 50,
+    title: "Silence needed before a confident end of turn (min_end_of_turn_silence_when_confident). Raise it if commands get cut at pauses",
+  },
+  {
+    key: "maxSilenceMs",
+    label: "Max silence",
+    unit: "ms",
+    step: 100,
+    title: "The line ends after this much silence whatever the model thinks (max_turn_silence)",
+  },
+];
+
+/** AssemblyAI turn detection: empty = AssemblyAI's default (shown as the placeholder). */
+function AssemblyTurnFields({ value, onChange }: { value: AssemblyTurn; onChange: (t: AssemblyTurn | undefined) => void }) {
+  const set = (key: keyof AssemblyTurn, raw: string) => {
+    const n = raw.trim() === "" ? undefined : Number(raw);
+    const next = { ...value, [key]: n !== undefined && Number.isFinite(n) ? n : undefined };
+    const kept = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)) as AssemblyTurn;
+    onChange(Object.keys(kept).length ? kept : undefined);
+  };
+  return (
+    <fieldset className="field">
+      <legend>AssemblyAI turn detection</legend>
+      <div className="turn-grid">
+        {TURN_FIELDS.map((f) => {
+          const [min, max] = ASSEMBLY_TURN_LIMITS[f.key];
+          return (
+            <label key={f.key} className="turn-field" title={f.title}>
+              <span>
+                {f.label} <small>({f.unit})</small>
+              </span>
+              <input
+                type="number"
+                min={min}
+                max={max}
+                step={f.step}
+                value={value[f.key] ?? ""}
+                onChange={(e) => set(f.key, e.target.value)}
+                placeholder={String(ASSEMBLY_TURN_DEFAULTS[f.key])}
+              />
+            </label>
+          );
+        })}
+      </div>
+      <span className="field-note">
+        Empty = AssemblyAI's default (shown greyed). Longer silences stop commands being cut at pauses but make every command arrive later.
+      </span>
+    </fieldset>
   );
 }
 

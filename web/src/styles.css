@@ -201,6 +201,30 @@ kbd {
 .field-label {
   margin-bottom: 0;
 }
+.field-note {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.turn-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.turn-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.turn-field span {
+  flex: 1;
+}
+.turn-field small {
+  color: var(--text-faint);
+}
 .field-error {
   color: var(--bad);
   font-size: 12px;

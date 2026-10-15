@@ -71,4 +71,14 @@ describe("settings -> speech config", () => {
     expect(speechConfig(s, health)).toMatchObject({ idleMs: 0, wakeRms: 10 ** (-50 / 20) });
     expect(speechConfig(with_({ speech: { keys: {}, idleSeconds: 90 } }), health).idleMs).toBe(90_000);
   });
+
+  it("sends AssemblyAI turn detection only for AssemblyAI, clamped", () => {
+    const speech = { keys: {}, assemblyTurn: { confidence: 2, minSilenceMs: 750 } };
+    expect(speechConfig(with_({ speech: { ...speech, provider: "assemblyai" } }), health).turn).toEqual({
+      confidence: 1,
+      minSilenceMs: 750,
+    });
+    expect(speechConfig(with_({ speech: { ...speech, provider: "deepgram" } }), health).turn).toBeUndefined();
+    expect(speechConfig(with_({ speech: { keys: {}, provider: "assemblyai" } }), health).turn).toEqual({});
+  });
 });

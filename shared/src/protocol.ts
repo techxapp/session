@@ -67,6 +67,39 @@ export type SttProvider = "moonshine" | "deepgram" | "assemblyai" | "browser";
 export const STT_PROVIDERS: SttProvider[] = ["moonshine", "deepgram", "assemblyai", "browser"];
 export const CLOUD_STT: SttProvider[] = ["deepgram", "assemblyai"];
 
+/**
+ * AssemblyAI turn detection (when a spoken line counts as finished), sent with the mic's `start` message.
+ * A field left out uses AssemblyAI's own default (ASSEMBLY_TURN_DEFAULTS, from its docs).
+ */
+export interface AssemblyTurn {
+  /** end_of_turn_confidence_threshold, 0-1: how sure the model must be that the speaker finished. */
+  confidence?: number;
+  /** min_end_of_turn_silence_when_confident, ms: silence needed before a confident end of turn. */
+  minSilenceMs?: number;
+  /** max_turn_silence, ms: the turn ends after this much silence whatever the model thinks. */
+  maxSilenceMs?: number;
+}
+export const ASSEMBLY_TURN_DEFAULTS: Required<AssemblyTurn> = { confidence: 0.4, minSilenceMs: 400, maxSilenceMs: 1280 };
+export const ASSEMBLY_TURN_LIMITS: Record<keyof AssemblyTurn, [number, number]> = {
+  confidence: [0, 1],
+  minSilenceMs: [0, 10_000],
+  maxSilenceMs: [0, 10_000],
+};
+
+/** Keeps only finite numbers, clamped to ASSEMBLY_TURN_LIMITS (ms rounded); anything else is dropped. */
+export function cleanAssemblyTurn(t: unknown): AssemblyTurn {
+  const out: AssemblyTurn = {};
+  if (!t || typeof t !== "object") return out;
+  for (const k of Object.keys(ASSEMBLY_TURN_LIMITS) as (keyof AssemblyTurn)[]) {
+    const v = (t as Record<string, unknown>)[k];
+    if (typeof v !== "number" || !Number.isFinite(v)) continue;
+    const [lo, hi] = ASSEMBLY_TURN_LIMITS[k];
+    const n = Math.min(hi, Math.max(lo, v));
+    out[k] = k === "confidence" ? n : Math.round(n);
+  }
+  return out;
+}
+
 /** GET /api/health: the server's .env defaults (never its keys). */
 export interface HealthInfo {
   ok: boolean;

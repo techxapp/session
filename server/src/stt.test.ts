@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 import { buildApp } from "./app";
 import { anthropicProvider } from "./provider";
+import { cleanAssemblyTurn } from "@board/shared";
 import { AssemblyLines, DeepgramLines, cleanKeyterms, sttSettingsFromEnv, toPcm16, upstreamFor, type SttSettings } from "./stt";
 
 describe("speech settings", () => {
@@ -25,6 +26,26 @@ describe("speech settings", () => {
     expect(q.get("format_turns")).toBe("true");
     expect(aai.headers).toEqual({ Authorization: "k" });
     expect(aai.keyterms?.(["Redis"])).toEqual({ type: "UpdateConfiguration", keyterms_prompt: ["Redis"] });
+    expect(q.has("end_of_turn_confidence_threshold")).toBe(false);
+    expect(q.has("min_end_of_turn_silence_when_confident")).toBe(false);
+    expect(q.has("max_turn_silence")).toBe(false);
+  });
+
+  it("sends AssemblyAI turn detection settings, clamped, and only the ones given", () => {
+    const s = sttSettingsFromEnv({});
+    const turn = cleanAssemblyTurn({ confidence: 0.7, minSilenceMs: 812.4, maxSilenceMs: 99_999, extra: 1 });
+    expect(turn).toEqual({ confidence: 0.7, minSilenceMs: 812, maxSilenceMs: 10_000 });
+    const q = new URL(upstreamFor("assemblyai", s, "k", 16000, [], turn).url).searchParams;
+    expect(q.get("end_of_turn_confidence_threshold")).toBe("0.7");
+    expect(q.get("min_end_of_turn_silence_when_confident")).toBe("812");
+    expect(q.get("max_turn_silence")).toBe("10000");
+    expect(cleanAssemblyTurn({ confidence: "0.5", minSilenceMs: NaN, maxSilenceMs: -5 })).toEqual({ maxSilenceMs: 0 });
+    expect(cleanAssemblyTurn(null)).toEqual({});
+    const partial = new URL(upstreamFor("assemblyai", s, "k", 16000, [], { minSilenceMs: 700 }).url).searchParams;
+    expect(partial.get("min_end_of_turn_silence_when_confident")).toBe("700");
+    expect(partial.has("end_of_turn_confidence_threshold")).toBe(false);
+    // Deepgram ignores them.
+    expect(new URL(upstreamFor("deepgram", s, "k", 16000, [], turn).url).searchParams.has("max_turn_silence")).toBe(false);
   });
 
   it("cleans key terms and converts float32 to int16", () => {

@@ -110,6 +110,8 @@ DEEPGRAM_API_KEY=...             # or ASSEMBLYAI_API_KEY=...
 
 The Settings choice overrides `STT_PROVIDER` for that browser and applies the next time the mic starts. A `.env` key is only sent to its own service. Board labels are passed as key terms to both services. Deepgram takes them only when the mic starts; AssemblyAI is updated as the board changes. Audio goes to the service you pick, and it is billed by the minute while it is connected, which stops when listening pauses.
 
+With AssemblyAI, *AssemblyAI turn detection* in Settings sets when a pause ends a command: the end-of-turn confidence (0-1, default 0.4), the silence needed when the model is confident (default 400 ms) and the longest silence allowed (default 1280 ms). Leave a field empty to use AssemblyAI's default. If commands get cut in half when you pause mid-sentence, raise the minimum silence to around 700-800 ms. Every command then arrives that much later.
+
 **Browser.** The *Browser* choice uses the browser's own speech recognition (the Web Speech API). It needs no key, no sidecar and no server. It works in Chrome, Edge and Safari, but not Firefox, and Brave has no speech service. Chrome sends the audio to Google and Edge to Microsoft. It ignores board key terms. Browsers end recognition after a pause, so it restarts on its own, and a word spoken right at a restart can be lost.
 
 ## Scripts

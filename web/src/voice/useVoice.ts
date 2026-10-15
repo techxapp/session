@@ -216,7 +216,7 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
       const terms = cb.current.getKeyterms();
       s.terms = terms.join("\n");
       s.line = undefined;
-      const which = cloud ? { provider: s.speech.provider, apiKey: s.speech.apiKey } : {};
+      const which = cloud ? { provider: s.speech.provider, apiKey: s.speech.apiKey, turn: s.speech.turn } : {};
       ws.send(JSON.stringify({ type: "start", sampleRate: s.ctx.sampleRate, keyterms: terms, ...which }));
       early.forEach((frame) => ws.send(frame));
       s.frame = (f) => ws.readyState === WebSocket.OPEN && ws.send(f);
