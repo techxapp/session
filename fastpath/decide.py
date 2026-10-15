@@ -213,10 +213,33 @@ def words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
-# Clip-art the LLM can draw with add_object (shared/objects.json): every name and alias -> object name.
-_CATALOG = json.loads((Path(__file__).resolve().parent.parent / "shared" / "objects.json").read_text(encoding="utf-8"))
-# Longest first, so "police car" wins over "car".
-OBJECT_WORDS = dict(sorted(((w, n) for n, o in _CATALOG.items() for w in (n, *o["aliases"])), key=lambda p: -len(p[0])))
+# Clip-art the LLM can draw with add_object: every curated name and alias (shared/objects.json) and the rest of the
+# icon set (shared/objects-more.json, names only) -> object name.
+_SHARED = Path(__file__).resolve().parent.parent / "shared"
+_CATALOG = json.loads((_SHARED / "objects.json").read_text(encoding="utf-8"))
+# Extra names that are board vocabulary, not pictures: any name with a shape/board noun ("red circle", "up arrow"; mirrors
+# BOARD_NOUNS in server/src/objects.ts, so "draw a red circle" stays a shape) and single words that are usually command
+# words (NOT_OBJECTS there, plus a few more: "plus", "watch", "fly"...).
+BOARD_NOUNS = re.compile(
+    r"\b(box|boxe|square|rectangle|rect|circle|ellipse|oval|diamond|shape|sticky|note|card|text|title|heading|caption|label|"
+    r"arrow|line|connector|node|diagram|flowchart|chart|graph|plot|table|list|bullet|measurement|dimension|step|stage|item|"
+    r"row|column)s?\b"
+)
+NOT_OBJECTS = {"label", "link", "chart", "map", "question", "scroll", "camera", "symbol", "sign", "page", "plus", "minus",
+               "divide", "multiply", "information", "construction", "customs", "guard", "judge", "pick", "station", "watch",
+               "fly", "seal", "prohibited", "collision", "dizzy", "mate", "copyright", "registered"}  # fmt: skip
+MORE_OBJECTS = [
+    n
+    for n in json.loads((_SHARED / "objects-more.json").read_text(encoding="utf-8"))
+    if not BOARD_NOUNS.search(n) and n not in NOT_OBJECTS
+]
+# Longest first, so "police car" wins over "car"; a curated name or alias wins over an extra name.
+OBJECT_WORDS = dict(
+    sorted(
+        {**{n: n for n in MORE_OBJECTS}, **{w: n for n, o in _CATALOG.items() for w in (n, *o["aliases"])}}.items(),
+        key=lambda p: -len(p[0]),
+    )
+)
 EDIT_ACTIONS = SET_ACTIONS | {"undo_last_command", "clear_board", "scroll_view", "zoom_view"}  # "zoom in on the tree" is no drawing
 
 

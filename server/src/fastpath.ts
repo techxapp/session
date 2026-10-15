@@ -20,7 +20,7 @@ export type FastPath = (req: CommandRequest, signal?: AbortSignal) => Promise<Fa
 const LOCAL_MODEL = "laya";
 
 /** Ask the sidecar at `url`; rejects on a network error, a non-200 reply or after `timeoutMs`. */
-export function httpFastPath(url: string, timeoutMs = 1000): FastPath {
+export function httpFastPath(url: string, timeoutMs = 1500): FastPath {
   const endpoint = `${url.replace(/\/$/, "")}/decide`;
   return async (req, signal) => {
     const timeout = AbortSignal.timeout(timeoutMs);
@@ -92,7 +92,7 @@ function validActions(decision: FastDecision): BoardAction[] | undefined {
 export function fastPathFromEnv(env: NodeJS.ProcessEnv = process.env): FastPath | undefined {
   const url = env.FASTPATH_URL?.trim();
   if (!url) return undefined;
-  const timeout = Number(env.FASTPATH_TIMEOUT_MS || 1000);
+  const timeout = Number(env.FASTPATH_TIMEOUT_MS || 1500); // a split command can take one Laya call per clause
   if (!Number.isFinite(timeout) || timeout <= 0)
     throw new Error(`FASTPATH_TIMEOUT_MS must be a positive number (got "${env.FASTPATH_TIMEOUT_MS}")`);
   return httpFastPath(url, timeout);

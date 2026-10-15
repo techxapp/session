@@ -50,6 +50,7 @@ from fastpath.decide import (  # noqa: E402
     words,
 )
 from fastpath.rules import rule_command  # noqa: E402
+from fastpath.split import split_command  # noqa: E402
 
 # Laya's head holds about this many target options; with more elements the target is left to the code rules.
 MAX_TARGET_OPTIONS = 10
@@ -71,12 +72,42 @@ def code_answer(text: str, scene: dict, t: float) -> dict | None:
     return reply(*ruled, RULES_MODEL, t, answers={}, target_rule=None) if ruled else None
 
 
+def decide_command(decide_one, text: str, scene: dict, t: float, model: str) -> dict:
+    """A rule answer for the whole command, else each clause of a split command, else `decide_one` on the whole.
+
+    A split command ("draw an apple and a mango") is fast only when every clause is fast on its own; the first
+    clause that isn't sends the whole command to the LLM, without asking about the remaining clauses.
+    """
+    if len(words(text)) > MAX_WORDS:
+        return reply("llm", None, "long command", RULES_MODEL, t)
+    ruled = rule_command(text, scene)
+    if ruled and ruled[0] == "fast":
+        return reply(*ruled, RULES_MODEL, t, answers={}, target_rule=None)
+    clauses = split_command(text, scene)
+    if not clauses:
+        return decide_one(text)
+    answers = []
+    for n, clause in enumerate(clauses, 1):
+        got = decide_one(clause)
+        answers.append({"text": clause, "route": got["route"], "reason": got["reason"], "model": got["model"]})
+        if got["route"] != "fast" or not got["actions"]:
+            return reply("llm", None, f"part {n} '{clause}': {got['reason']}", got["model"], t, parts=answers)
+        answers[-1]["actions"] = got["actions"]
+    actions = [a for part in answers for a in part.pop("actions")]
+    by = RULES_MODEL if all(a["model"] == RULES_MODEL for a in answers) else model
+    return reply("fast", actions, "split: " + " + ".join(a["reason"] for a in answers), by, t, parts=answers)
+
+
 class RulesOnly:
     """The sidecar without a decision model: rule answers only, everything else goes to the LLM."""
 
     name, threshold, device, asleep = RULES_MODEL, None, None, False
 
     def decide(self, text: str, scene: dict) -> dict:
+        t = time.perf_counter()
+        return decide_command(lambda part: self.decide_one(part, scene), text, scene, t, self.name)
+
+    def decide_one(self, text: str, scene: dict) -> dict:
         t = time.perf_counter()
         return code_answer(text, scene, t) or reply("llm", None, "no rule matched", RULES_MODEL, t)
 
@@ -187,13 +218,20 @@ class FastPath:
             self.waking = False
 
     def decide(self, text: str, scene: dict, warming: bool = False) -> dict:
+        if warming:
+            return self.ask(text, scene, warming=True)
+        self.last_request = time.monotonic()
+        if self.asleep:
+            self.wake()
+        return decide_command(lambda part: self.decide_one(part, scene), text, scene, time.perf_counter(), self.name)
+
+    def decide_one(self, text: str, scene: dict) -> dict:
+        """One command (or clause): rules, measurements and clear-verb objects in code, else Laya."""
+        return code_answer(text, scene, time.perf_counter()) or self.ask(text, scene)
+
+    def ask(self, text: str, scene: dict, warming: bool = False) -> dict:
+        """Laya's answers for the command, routed."""
         t = time.perf_counter()
-        if not warming:
-            self.last_request = time.monotonic()
-            if self.asleep:
-                self.wake()
-        if not warming and (coded := code_answer(text, scene, t)):  # rules, measurements, clear-verb objects
-            return coded
         obj = object_command(text)  # only a casual one is left ("let's grab a tree"): Laya checks it's for the board
         aliased, back = alias_scene(scene)
         questions = build_questions(aliased)

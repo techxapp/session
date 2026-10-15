@@ -329,6 +329,21 @@ def resize(cmd: Command, scene: dict):
     return (each("update_element", targets, size=SIZE_WORDS[w[end - 1]]), "resize") if targets else None
 
 
+RESIZE_BY = {"increase": "large", "enlarge": "large", "grow": "large", "expand": "large",
+             "reduce": "small", "decrease": "small", "shrink": "small"}  # fmt: skip
+
+
+def resize_by(cmd: Command, scene: dict):
+    """'reduce the square', 'shrink it', 'increase the cache size', 'reduce the size of the tree' -> small / large."""
+    w = cmd.w
+    if w[0] not in RESIZE_BY:
+        return None
+    start = 4 if w[1:4] == ["the", "size", "of"] else 1
+    stop = len(w) - 1 if start == 1 and w[-1] == "size" else len(w)
+    targets = ref(w[start:stop], scene, group=True) if stop > start else None
+    return (each("update_element", targets, size=RESIZE_BY[w[0]]), "resize") if targets else None
+
+
 def move(cmd: Command, scene: dict):
     w = cmd.w
     if w[0] not in MOVE_VERBS:
@@ -506,6 +521,17 @@ ZOOM_SET = sorted(["zoom", "zoom to", "zoom back to", "zoom in to", "zoom out to
                    "set zoom level to", "set the zoom level to", "change the zoom to"], key=lambda p: -len(p))  # fmt: skip
 
 
+# "increase the zoom", "reduce zoom level": a zoom step.
+ZOOM_STEPS = dict(
+    sorted(
+        ((f"{verb} {obj}", step) for verb, step in [("increase", "in"), ("raise", "in"), ("decrease", "out"), ("reduce", "out"),
+                                                    ("lower", "out")]
+         for obj in ["zoom", "the zoom", "zoom level", "the zoom level"]),
+        key=lambda p: -len(p[0]),
+    )
+)  # fmt: skip
+
+
 def zoom_level(w: list[str]) -> tuple[int, int] | None:
     """(percent, words used) for "150", "150 percent" ("150%" tokenises as "150"), "2x" or "2 times"."""
     m = re.fullmatch(r"(\d+)(x?)", w[0]) if w else None
@@ -546,6 +572,8 @@ def zoom(cmd: Command, scene: dict):
             inp["amount"] = "little"
     elif w[:1] == ["zoom"] and w[1:2] in (["into"], ["onto"]):  # "zoom into postgres"
         inp, rest = {"step": "in"}, w[1:]
+    elif n := starts(w, ZOOM_STEPS):  # "increase the zoom [on postgres]"
+        inp, rest = {"step": ZOOM_STEPS[cmd.phrase(0, n)]}, w[n:]
     else:
         return None
     if rest:
@@ -596,7 +624,7 @@ def edits_chart(cmd: Command, scene: dict) -> bool:
     return False
 
 
-TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, scroll, zoom, move, animate]
+TEMPLATES = [undo, clear, arrow, add_text, add_shape, delete, rename, recolor, resize, scroll, zoom, resize_by, move, animate]
 
 
 def rule_command(text: str, scene: dict) -> tuple[str, list[dict] | None, str] | None:

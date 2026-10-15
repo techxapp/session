@@ -48,6 +48,10 @@ class Rules(unittest.TestCase):
             "turn the yellow notes pink": [U("s1", color="pink"), U("s2", color="pink")],
             "make the tree big": [U("tree", size="large")],
             "make the title medium sized": [U("title", size="medium")],
+            "reduce the cache size": [U("cache", size="small")],
+            "reduce the size of the tree": [U("tree", size="small")],
+            "shrink it": [U("cache", size="small")],
+            "enlarge postgres": [U("db", size="large")],
             "nudge it a bit to the left": [{"name": "move_element", "input": {"target": "cache", "direction": "left", "distance": "little"}}],
             "move postgres down": [{"name": "move_element", "input": {"target": "db", "direction": "down"}}],
             "draw a big red circle": [{"name": "add_shape", "input": {"kind": "ellipse", "color": "red", "size": "large"}}],
@@ -223,6 +227,9 @@ class Zoom(unittest.TestCase):
             "reset the zoom": Z(level=100),
             "actual size": Z(level=100),
             "zoom back to normal": Z(level=100),
+            "increase zoom": Z(step="in"),
+            "reduce the zoom level": Z(step="out"),
+            "increase the zoom on postgres": Z(step="in", on="db"),
         }
         for text, want in cases.items():
             with self.subTest(text):
