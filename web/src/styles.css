@@ -1130,3 +1130,13 @@ kbd {
     display: none;
   }
 }
+
+.wake-slider {
+  width: 100%;
+}
+.wake-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  opacity: 0.7;
+}

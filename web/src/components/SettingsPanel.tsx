@@ -71,8 +71,11 @@ const IDLE: { value: string; label: string }[] = [
 ];
 const WAKE: { value: WakeSensitivity; label: string; title: string }[] = [
   { value: "high", label: "High", title: "Wakes on quieter speech (and more often on background noise)" },
+  { value: "normal", label: "Normal", title: "Default" },
   { value: "low", label: "Low", title: "Needs clearer, louder speech to wake" },
+  { value: "lowest", label: "Lowest", title: "Only loud, close speech wakes it" },
 ];
+const WAKE_ORDER = WAKE.map((o) => o.value);
 const speechName = (p: SttProvider) => SPEECH.find((o) => o.value === p)!.label;
 const OTHER = "\u0000other";
 
@@ -338,13 +341,24 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
         {speech.idleMs > 0 && (
           <div className="field">
             <span className="field-label">Wake sensitivity</span>
-            <Segmented
-              value={settings.speech.wake}
-              onChange={(wake) => setSpeech({ wake })}
-              options={WAKE}
-              defaultLabel="Default (normal)"
-              defaultTitle="How loud the mic must get to resume a paused session"
+            <input
+              type="range"
+              className="wake-slider"
+              min={0}
+              max={WAKE.length - 1}
+              step={1}
+              value={WAKE_ORDER.indexOf(settings.speech.wake ?? "normal")}
+              onChange={(e) => setSpeech({ wake: WAKE_ORDER[Number(e.target.value)] })}
+              aria-label="Wake sensitivity"
+              title="How loud the mic must get to resume a paused session"
             />
+            <div className="wake-labels">
+              {WAKE.map((o) => (
+                <span key={o.value} title={o.title}>
+                  {o.label}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 

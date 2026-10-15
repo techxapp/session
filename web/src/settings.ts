@@ -92,14 +92,14 @@ export interface SpeechSettings {
   holdSpeakingMs?: number;
 }
 
-export type WakeSensitivity = "high" | "normal" | "low";
+export type WakeSensitivity = "high" | "normal" | "low" | "lowest";
 export const IDLE_SECONDS = 10;
 /** Line joining defaults (see useVoice.ts#LineJoiner): wait after a line ending in "and"/"with"/..., and while the rest is spoken. */
 export const HOLD_MS = 1500;
 export const HOLD_SPEAKING_MS = 8000;
 export const HOLD_LIMITS = { holdMs: [0, 10_000], holdSpeakingMs: [1000, 30_000] } as const;
 /** RMS level (dBFS) of a ~100 ms mic frame that counts as someone speaking, after the browser's noise suppression. */
-export const WAKE_DBFS: Record<WakeSensitivity, number> = { high: -50, normal: -42, low: -34 };
+export const WAKE_DBFS: Record<WakeSensitivity, number> = { high: -50, normal: -42, low: -34, lowest: -26 };
 
 /** What the voice hook needs to start listening. */
 export interface SpeechConfig {
