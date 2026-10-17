@@ -90,6 +90,8 @@ export interface SpeechSettings {
   holdMs?: number;
   /** ... and how long once the speaker has carried on; default HOLD_SPEAKING_MS. */
   holdSpeakingMs?: number;
+  /** A spoken line with no verb ("apple and mango") runs as "draw ..." (voice/corrections.ts#withDefaultVerb); default on. */
+  defaultDraw?: boolean;
 }
 
 export type WakeSensitivity = "high" | "normal" | "low" | "lowest";

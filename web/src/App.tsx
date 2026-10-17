@@ -14,6 +14,7 @@ import { CommandDock } from "./components/CommandDock";
 import { PlotHover } from "./components/PlotHover";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPill, type ServerStatus } from "./components/StatusPill";
+import { useCorrections } from "./voice/corrections";
 import { boardKeyterms, useVoice } from "./voice/useVoice";
 import {
   activeChoice,
@@ -61,14 +62,31 @@ export default function App() {
   const getAutoCenter = useCallback(() => latest.current.settings.autoCenter, []);
   const runner = useCommandRunner(api, getConfig, getAutoCenter);
 
+  // Learned fixes for misheard lines (voice only): every command that changed nothing is kept so it can be fixed in the activity panel.
+  const corrections = useCorrections();
+  const { capture } = corrections;
+  const capturedIds = useRef(new Set<number>());
+  useEffect(() => {
+    for (const e of runner.log) {
+      if (e.status !== "ignored" || capturedIds.current.has(e.id)) continue;
+      capturedIds.current.add(e.id);
+      capture(e.text);
+    }
+  }, [runner.log, capture]);
+
   // Spoken commands run in order: a new line waits for the command in flight instead of cancelling it (typing still barges in).
   const runRef = useRef(runner.run);
   runRef.current = runner.run;
   const spoken = useRef<Promise<unknown>>(Promise.resolve());
-  const onSpoken = useCallback((text: string) => {
-    spoken.current = spoken.current.then(() => runRef.current(text)).catch(() => undefined);
-  }, []);
-  const getKeyterms = useCallback(() => (api ? boardKeyterms(api.getSceneElements()) : []), [api]);
+  const { apply: correct, keyterms: learnedKeyterms } = corrections;
+  const onSpoken = useCallback(
+    (text: string) => {
+      const line = correct(text, latest.current.settings.speech.defaultDraw ?? true);
+      spoken.current = spoken.current.then(() => runRef.current(line)).catch(() => undefined);
+    },
+    [correct],
+  );
+  const getKeyterms = useCallback(() => (api ? boardKeyterms(api.getSceneElements(), learnedKeyterms()) : []), [api, learnedKeyterms]);
   const getSpeech = useCallback(() => speechConfig(latest.current.settings, latest.current.health ?? null), []);
   const voice = useVoice(onSpoken, getKeyterms, getSpeech);
 
@@ -199,7 +217,7 @@ export default function App() {
 
       {settingsOpen && <SettingsPanel settings={settings} health={health ?? null} update={updateSettings} onClose={closeSettings} />}
 
-      <ActivityPanel log={runner.log} running={runner.running} onUndo={runner.undo} />
+      <ActivityPanel log={runner.log} running={runner.running} onUndo={runner.undo} corrections={corrections} />
 
       <CommandDock
         showSuggestions={boardEmpty && runner.log.length === 0}

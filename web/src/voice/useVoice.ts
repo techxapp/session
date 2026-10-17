@@ -35,10 +35,12 @@ export const COMMAND_KEYTERMS = ["draw", "flower"];
 
 /**
  * Key terms to bias recognition toward: COMMAND_KEYTERMS, then the board labels ("Postgres", "Auth service"),
- * newest kept. Clip-art names are ordinary words, so they're left out.
+ * newest kept. Clip-art names are ordinary words, so they're left out. `learned` (words the user's corrections teach,
+ * corrections.ts#ruleKeyterms) go right after COMMAND_KEYTERMS.
  */
-export function boardKeyterms(elements: readonly ExcalidrawElement[]): string[] {
-  const seen = new Set(COMMAND_KEYTERMS.map((t) => t.toLowerCase()));
+export function boardKeyterms(elements: readonly ExcalidrawElement[], learned: readonly string[] = []): string[] {
+  const fixed = [...new Map([...COMMAND_KEYTERMS, ...learned].map((t) => [t.toLowerCase(), t])).values()];
+  const seen = new Set(fixed.map((t) => t.toLowerCase()));
   const out: string[] = [];
   for (const el of elements) {
     if (!isTopLevel(el) || el.type === "image") continue;
@@ -49,7 +51,7 @@ export function boardKeyterms(elements: readonly ExcalidrawElement[]): string[] 
     }
   }
   // The fixed words go first and the labels' share shrinks to fit, so the server's "newest 50" trim never drops them.
-  return [...COMMAND_KEYTERMS, ...out.slice(-(MAX_KEYTERMS - COMMAND_KEYTERMS.length))];
+  return [...fixed, ...out.slice(-(MAX_KEYTERMS - fixed.length))];
 }
 
 /** Frames (~100 ms each, so 2 s) kept while dozing and sent on waking, so the words that woke the mic still count. */

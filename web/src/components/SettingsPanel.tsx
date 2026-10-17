@@ -364,6 +364,28 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
 
         <JoinFields speech={settings.speech} setSpeech={setSpeech} />
 
+        <div className="field">
+          <span className="field-label">Spoken names without a verb</span>
+          <div className="segmented" role="radiogroup">
+            {[
+              { on: true, label: "Draw them", title: '"apple and mango" runs as "draw apple and mango"' },
+              { on: false, label: "As heard", title: "Run the line exactly as heard" },
+            ].map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                role="radio"
+                aria-checked={(settings.speech.defaultDraw ?? true) === o.on}
+                className={(settings.speech.defaultDraw ?? true) === o.on ? "is-checked" : ""}
+                onClick={() => setSpeech({ defaultDraw: o.on })}
+                title={o.title}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {CLOUD_STT.includes(speech.provider) && (
           <label className="field">
             <span className="field-label">{speechName(speech.provider)} API key</span>
