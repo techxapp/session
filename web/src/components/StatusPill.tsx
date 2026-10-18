@@ -11,9 +11,10 @@ const MODEL_NAMES: Record<string, string> = {
   "claude-opus-5-5": "Opus 5.5",
 };
 
-/** Friendly model name: known Anthropic ids, "laya:<checkpoint>" and "rules" from the local fast path, else the raw id. */
+/** Friendly model name: known Anthropic ids, "laya:<checkpoint>", "heads:<checkpoint>" and "rules" from the local fast path, else the raw id. */
 export function modelName(model: string): string {
   if (model === "laya" || model.startsWith("laya:")) return "Laya";
+  if (model.startsWith("heads:")) return "Heads";
   if (model === "rules") return "Rules";
   return MODEL_NAMES[model] ?? model;
 }
@@ -26,7 +27,7 @@ export function StatusPill({ status }: { status: ServerStatus }) {
           `System 1 · ${modelName(status.model)}${status.fastPath ? " + local" : ""}`,
           `${status.where ?? "Server .env"} · ${status.model}. ` +
             (status.fastPath
-              ? "Simple commands run locally (code rules, then the Laya model if loaded); the rest go to the cloud model"
+              ? "Simple commands run locally (code rules, then a local model if loaded); the rest go to the cloud model"
               : "Fast model connected"),
         ]
       : status.state === "no-key"

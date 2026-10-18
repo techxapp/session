@@ -61,25 +61,26 @@ Each cloud command in the activity panel shows which object mode it used (`objec
 - **Zooming** (`zoom_view`): "zoom in", "zoom out a bit", "zoom to 150%", "set the zoom to 2x", "reset the zoom" or "zoom in on the database" glides to that zoom level (10% to 3000%), keeping the middle of the screen in place or centring the named element. Like scrolling, it adds no undo step, and the local rules answer the common phrasings.
 - The model gets a compact text summary of the scene (ids, labels, positions, selection, recently touched elements), so references like "it", "the database" or "that box" resolve.
 
-### Optional: local fast path (rules + Laya)
+### Optional: local fast path (rules + a local model)
 
 Simple commands can be settled locally instead of by the cloud LLM, with no API cost. `fastpath/server.py` is a sidecar with three tiers; when `FASTPATH_URL` is set, the server asks it first:
 
 1. **Rules** (code, under 1 ms, no GPU): commands that follow a small fixed grammar, where every word has to be accounted for. These cover undo and clear; delete, recolor, resize and move of a named element ("make the API red", "nudge it a bit left", "delete all the notes"); new shapes with an optional colour, size, region and label ("add a pink sticky saying call the bank"); titles and captions ("add a title that says Q3 plan"); renames ("rename the cache to Redis"); arrows ("connect the API to the cache"); clip-art ("draw a tree"); simple motion ("the boy walks towards the girl"); and simple measurements ("the tree is 10 ft tall"). Any leftover word, second clause or unclear reference passes the command on. A command that is a short list of simple ones ("draw an apple and a mango", "increase the zoom and reduce the square", "make the API red and delete the cache") is split at "and"/"then"/commas and goes local only if every part does; otherwise the whole command goes to the cloud.
-2. **Laya** (optional, about 0.27 s on a 4 GB laptop GPU): a fine-tuned [Laya](https://huggingface.co/convaiinnovations/laya) checkpoint (Apache 2.0) handles what the rules can't parse. It drops chatter ("can everyone see my screen"), handles synonyms and paraphrases ("delete the database" when the box is labelled Postgres), scrolls and zooms ("can we get a closer look", "take me over to the postgres one"), and checks casual object commands ("let's grab a tree" vs. "let's grab a coffee"). It also acts as a router: commands only the cloud model can do (pictures, diagrams, charts, motion) go there, and when it is sure which basic tools a cloud command needs (only edits, only new shapes...), the cloud request carries only those. The checkpoint must be trained on the sidecar's current question set (`eval/make_train.py` + `eval/train_laya.py`); an older one is refused at startup.
+2. **A local model** (optional): either a fine-tuned [Laya](https://huggingface.co/convaiinnovations/laya) checkpoint (Apache 2.0; about 0.27 s on a 4 GB laptop GPU, one pass per question) or the single-pass **heads** model (`fastpath/heads.py`, a fine-tuned ModernBERT-base; about 0.1 s on the CPU, no GPU needed; on our test sets it took more commands locally than Laya, with no wrong actions). The model handles what the rules can't parse. It drops chatter ("can everyone see my screen"), handles synonyms and paraphrases ("delete the database" when the box is labelled Postgres), scrolls and zooms ("can we get a closer look", "take me over to the postgres one"), and checks casual object commands ("let's grab a tree" vs. "let's grab a coffee"). It also acts as a router: commands only the cloud model can do (pictures, diagrams, charts, motion) go there, and when it is sure which basic tools a cloud command needs (only edits, only new shapes...), the cloud request carries only those. Either checkpoint must be trained on the sidecar's current question set (`eval/make_train.py`, then `eval/train_laya.py` or `eval/train_heads.py`); an older one is refused at startup.
 3. **Cloud**: anything else (several changes the split can't settle, motion the rules can't parse (Laya can't animate), placement next to other elements, generating diagrams (the rules send any command with a diagram word like "flowchart" or "architecture" there), graphs and charts (any command with "graph", "plot", "chart", "equation" or a `y =`, or naming a category or series of a chart on the board), low confidence) goes to the cloud model. So does every command when the sidecar is down or slower than `FASTPATH_TIMEOUT_MS`.
 
 Local actions are validated with the same zod schemas and streamed to the board. Each command in the activity panel (right side; collapse it with its header button) shows a **Local** or **Cloud** badge with the reason, for example "Handled locally (rule: recolor)" or "Sent to the cloud (local model passed: several changes)". The status pill reads "System 1 · Haiku 4.5 + local" when the fast path is on.
 
-Run it. Without a checkpoint the sidecar runs the rules only and needs plain Python 3.10+. With Laya it also needs CUDA PyTorch (see `fastpath/requirements.txt`):
+Run it. Without a checkpoint the sidecar runs the rules only and needs plain Python 3.10+. With a model it also needs PyTorch (CUDA for Laya; the heads model runs on the CPU; see `fastpath/requirements.txt`):
 
 ```
 python fastpath/server.py                                            # rules only
 LAYA_CHECKPOINT=/path/to/laya-checkpoint python fastpath/server.py   # rules + Laya; listens on 127.0.0.1:8788
+HEADS_CHECKPOINT=/path/to/heads-checkpoint python fastpath/server.py # or rules + the heads model (on the CPU)
 FASTPATH_URL=http://127.0.0.1:8788 npm run dev
 ```
 
-The checkpoint is produced by `eval/make_train.py` + `eval/train_laya.py` (see `eval/`); it is not in the repo.
+Checkpoints are produced by `eval/make_train.py` + `eval/train_laya.py` or `eval/train_heads.py` (see `eval/`); they are not in the repo.
 
 ### Optional: voice input (local Moonshine or cloud)
 
@@ -147,7 +148,7 @@ The in-app Model settings (above) override these per browser.
 | `FASTPATH_URL` | — | Local fast-path sidecar, e.g. `http://127.0.0.1:8788`. Unset = every command goes to the cloud model |
 | `FASTPATH_TIMEOUT_MS` | `1500` | How long to wait for the sidecar before using the cloud model |
 
-The sidecar reads its own variables: `LAYA_CHECKPOINT` (unset = rules only), `FASTPATH_PORT` (8788), `FASTPATH_HOST` (127.0.0.1), `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5), `FASTPATH_IDLE_UNLOAD_S` (900; unload the model from the GPU after this many idle seconds, the next command wakes it and is answered by the cloud model; 0 = never), `FASTPATH_TOOLS_THRESHOLD` (0.97; how sure Laya must be before a cloud request gets only part of the core tools), `LAYA_DEVICE`.
+The sidecar reads its own variables: `LAYA_CHECKPOINT` or `HEADS_CHECKPOINT` (set one; neither = rules only), `FASTPATH_DEVICE` (`cuda`/`cpu`; the heads model defaults to `cpu`), `FASTPATH_THREADS` (4; CPU threads for the heads model), `FASTPATH_PORT` (8788), `FASTPATH_HOST` (127.0.0.1), `FASTPATH_THRESHOLD` (0.8), `FASTPATH_KEEP_WARM_S` (5; 0 when the model runs on the CPU), `FASTPATH_IDLE_UNLOAD_S` (900; unload the model after this many idle seconds, the next command wakes it and is answered by the cloud model; 0 = never), `FASTPATH_TOOLS_THRESHOLD` (0.97; how sure the local model must be before a cloud request gets only part of the core tools), `LAYA_DEVICE` (older name of `FASTPATH_DEVICE`, Laya only).
 
 ## Licenses
 

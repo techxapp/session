@@ -1,5 +1,6 @@
 """
-Fast-path sidecar: answers "can this command skip the LLM?" with code rules, then a fine-tuned Laya checkpoint.
+Fast-path sidecar: answers "can this command skip the LLM?" with code rules, then a local decision model: a fine-tuned
+Laya checkpoint or a single-pass heads checkpoint (fastpath/heads.py).
 
 POST /decide {text, scene}  ->  {route: "fast" | "ignore" | "llm", actions: [{name, input}] | null, reason, model, ms,
                                  tools?: {core: [group] | null}, ...}
@@ -7,17 +8,20 @@ GET  /health                ->  {ok, model, threshold, device, awake}
 
 The Node server (server/src/fastpath.ts) calls /decide before the LLM: "fast" actions are streamed to the board
 as they are, "ignore" drops chatter, and "llm" (or any failure) falls through to the normal model call.
-First the rules (fastpath/rules.py) try to settle the command in code. Otherwise one Laya call asks every
-question in fastpath/decide.py; code then picks the target when the command names it, routes on confidence and
-builds the actions. Without LAYA_CHECKPOINT the sidecar runs rules only (no torch needed) and passes the rest
-to the LLM.
+First the rules (fastpath/rules.py) try to settle the command in code. Otherwise the model answers every
+question in fastpath/decide.py (Laya: one pass per question; heads: one pass for all); code then picks the target
+when the command names it, routes on confidence and builds the actions. With neither checkpoint set the sidecar runs
+rules only (no torch needed) and passes the rest to the LLM.
 
 Setup (this machine): reuse the eval venv, which already has torch (CUDA) and laya.
   eval/.venv/Scripts/python fastpath/server.py
-Env: LAYA_CHECKPOINT (fine-tuned checkpoint dir; unset = rules only), FASTPATH_PORT (8788), FASTPATH_HOST (127.0.0.1),
-     FASTPATH_THRESHOLD (0.8: no wrong actions on any eval set), LAYA_DEVICE (cuda / cpu, default Laya's choice),
-     FASTPATH_KEEP_WARM_S (5; a tiny decision after this many idle seconds keeps the GPU clocked up; 0 disables),
-     FASTPATH_IDLE_UNLOAD_S (900; with no /decide request for this long the model is unloaded from the GPU and
+Env: LAYA_CHECKPOINT (fine-tuned Laya checkpoint dir) or HEADS_CHECKPOINT (eval/train_heads.py output); set at most
+     one, neither = rules only. FASTPATH_PORT (8788), FASTPATH_HOST (127.0.0.1),
+     FASTPATH_THRESHOLD (0.8: no wrong actions on any eval set), FASTPATH_DEVICE (cuda / cpu; default: Laya's choice
+     (LAYA_DEVICE is still read), cpu for heads), FASTPATH_THREADS (CPU threads for heads on cpu, default 4),
+     FASTPATH_KEEP_WARM_S (5, 0 on cpu; a tiny decision after this many idle seconds keeps the GPU clocked up;
+     0 disables),
+     FASTPATH_IDLE_UNLOAD_S (900; with no /decide request for this long the model is unloaded (GPU or RAM) and
      keep-warm stops; the next request wakes it in the background and is answered by the LLM; 0 disables),
      FASTPATH_TOOLS_THRESHOLD (0.97; confidence for the `tools` hint: which core tool groups the cloud model gets;
      at 0.9 one of 70 eval commands would have lost its drawing tools).
@@ -147,20 +151,63 @@ def unalias(actions: list[dict], back: dict[str, str]) -> list[dict]:
     return out
 
 
-class FastPath:
-    def __init__(
-        self, checkpoint: str, threshold: float, device: str | None, keep_warm_s: float = 5.0, idle_unload_s: float = 900.0,
-        tools_threshold: float = 0.97,
-    ):
+class LayaModel:
+    """A fine-tuned Laya checkpoint: one pass per question. Its target head holds about 10 elements."""
+
+    max_targets = MAX_TARGET_OPTIONS
+
+    def __init__(self, checkpoint: str, device: str | None):
         import laya
 
-        self.checkpoint, self.threshold, self.device = checkpoint, threshold, device
-        # A wrong tool hint can leave the cloud model without a tool it needs, so it takes more confidence than a fast action.
-        self.tools_threshold = tools_threshold
-        self.name = f"laya:{Path(checkpoint).name}"
+        self.name, self.device = f"laya:{Path(checkpoint).name}", device
         self.router = laya.Router(device=device, default="english")
         self.model = self.router.register("tuned", checkpoint)
+        self.load()
+
+    def load(self) -> None:
         self.router.load(self.model)
+
+    def unload(self) -> None:
+        self.router.unload(self.model)
+
+    def answers(self, text: str, questions: dict) -> dict:
+        return parse_answers(self.router.predict({"command": text}, questions, model=self.model))
+
+
+class HeadsDecider:
+    """A fastpath/heads.py checkpoint: one pass answers every question; the target is a pointer over any number of elements."""
+
+    max_targets = None
+
+    def __init__(self, checkpoint: str, device: str):
+        self.checkpoint, self.device = checkpoint, device
+        self.name = f"heads:{Path(checkpoint).name}"
+        self.decider = None
+        self.load()
+
+    def load(self) -> None:
+        from fastpath.heads import Decider
+
+        self.decider = Decider(self.checkpoint, device=self.device)
+
+    def unload(self) -> None:
+        self.decider = None
+        if self.device != "cpu":
+            import torch
+
+            torch.cuda.empty_cache()
+
+    def answers(self, text: str, questions: dict) -> dict:
+        crit = questions.get("target", {}).get("criteria", {})
+        return self.decider.answer(text, {k: v for k, v in crit.items() if k != "none"})[0]
+
+
+class FastPath:
+    def __init__(self, model, threshold: float, keep_warm_s: float = 5.0, idle_unload_s: float = 900.0, tools_threshold: float = 0.97):
+        """`model`: a LayaModel or HeadsDecider (name, device, max_targets, load(), unload(), answers(text, questions))."""
+        self.model, self.threshold, self.device, self.name = model, threshold, model.device, model.name
+        # A wrong tool hint can leave the cloud model without a tool it needs, so it takes more confidence than a fast action.
+        self.tools_threshold = tools_threshold
         self.lock = threading.Lock()  # one model, one call at a time
         self.last_call = 0.0  # last model call, including keep-warm ones
         self.last_request = time.monotonic()  # last /decide request: what idle unload measures
@@ -191,9 +238,9 @@ class FastPath:
             if idle_unload_s > 0 and now - self.last_request >= idle_unload_s:
                 with self.lock:  # re-check: a request may have arrived while waiting for the lock
                     if time.monotonic() - self.last_request >= idle_unload_s:
-                        self.router.unload(self.model)
+                        self.model.unload()
                         self.asleep = True
-                        sys.stderr.write(f"idle for {idle_unload_s:.0f}s: model unloaded from the GPU\n")
+                        sys.stderr.write(f"idle for {idle_unload_s:.0f}s: model unloaded\n")
             elif keep_warm_s > 0 and now - self.last_call >= keep_warm_s:
                 self.warm()
 
@@ -208,7 +255,7 @@ class FastPath:
     def _wake(self) -> None:
         t = time.perf_counter()
         try:
-            self.router.load(self.model)
+            self.model.load()
             self.warm()
             self.asleep = False
             sys.stderr.write(f"model reloaded in {time.perf_counter() - t:.1f}s\n")
@@ -226,23 +273,23 @@ class FastPath:
         return decide_command(lambda part: self.decide_one(part, scene), text, scene, time.perf_counter(), self.name)
 
     def decide_one(self, text: str, scene: dict) -> dict:
-        """One command (or clause): rules, measurements and clear-verb objects in code, else Laya."""
+        """One command (or clause): rules, measurements and clear-verb objects in code, else the model."""
         return code_answer(text, scene, time.perf_counter()) or self.ask(text, scene)
 
     def ask(self, text: str, scene: dict, warming: bool = False) -> dict:
-        """Laya's answers for the command, routed."""
+        """The model's answers for the command, routed."""
         t = time.perf_counter()
         obj = object_command(text)  # only a casual one is left ("let's grab a tree"): Laya checks it's for the board
         aliased, back = alias_scene(scene)
         questions = build_questions(aliased)
-        if len(questions.get("target", {}).get("criteria", {})) > MAX_TARGET_OPTIONS + 1:
+        if self.model.max_targets and len(questions.get("target", {}).get("criteria", {})) > self.model.max_targets + 1:
             del questions["target"]
         with self.lock:
             if self.asleep and not warming:  # unloaded after the check above, or still reloading
                 return {"route": "llm", "actions": None, "reason": "fast path waking up", "model": self.name, "ms": 0}
-            raw = self.router.predict({"command": text}, questions, model=self.model)
+            ans = self.model.answers(text, questions)
             self.last_call = time.monotonic()
-        ans = {**parse_answers(raw), **code_answers(text)}
+        ans = {**ans, **code_answers(text)}
         if "target" not in questions:
             ans["target"] = ("none", 0.0)  # unknown, not confidently "none"
         rule = resolve_target(text, aliased)
@@ -306,13 +353,7 @@ def handler_for(fast: FastPath | RulesOnly):
     return Handler
 
 
-def main() -> None:
-    checkpoint = os.environ.get("LAYA_CHECKPOINT")
-    host, port = os.environ.get("FASTPATH_HOST", "127.0.0.1"), int(os.environ.get("FASTPATH_PORT", 8788))
-    if not checkpoint:
-        print(f"fast path ready on http://{host}:{port} (rules only: LAYA_CHECKPOINT is not set)", flush=True)
-        ThreadingHTTPServer((host, port), handler_for(RulesOnly())).serve_forever()
-        return
+def laya_model(checkpoint: str, device: str | None) -> LayaModel:
     if not Path(checkpoint, "rl_agent_config.json").exists():
         sys.exit("LAYA_CHECKPOINT must be a fine-tuned Laya checkpoint dir (one with rl_agent_config.json).")
     marker = Path(checkpoint, QUESTIONS_FILE)
@@ -322,15 +363,46 @@ def main() -> None:
             f"{Path(checkpoint).name} was trained on questions v{trained_on}, but fastpath/decide.py asks v{QUESTIONS_VERSION}. "
             "Retrain it (eval/make_train.py + eval/train_laya.py) or run rules only (unset LAYA_CHECKPOINT)."
         )
+    return LayaModel(checkpoint, device)
+
+
+def heads_model(checkpoint: str, device: str) -> HeadsDecider:
+    from fastpath.heads import CONFIG_FILE
+
+    if not Path(checkpoint, CONFIG_FILE).exists():
+        sys.exit(f"HEADS_CHECKPOINT must be a heads checkpoint dir from eval/train_heads.py (one with {CONFIG_FILE}).")
+    if device == "cpu":
+        import torch
+
+        torch.set_num_threads(int(os.environ.get("FASTPATH_THREADS", 4)))
+    try:
+        return HeadsDecider(checkpoint, device)
+    except ValueError as err:  # trained on other questions (fastpath.heads.load_checkpoint)
+        sys.exit(f"{err}. Retrain it with eval/train_heads.py or run rules only (unset HEADS_CHECKPOINT).")
+
+
+def main() -> None:
+    laya_dir, heads_dir = os.environ.get("LAYA_CHECKPOINT"), os.environ.get("HEADS_CHECKPOINT")
+    host, port = os.environ.get("FASTPATH_HOST", "127.0.0.1"), int(os.environ.get("FASTPATH_PORT", 8788))
+    if laya_dir and heads_dir:
+        sys.exit("Set LAYA_CHECKPOINT or HEADS_CHECKPOINT, not both.")
+    if not laya_dir and not heads_dir:
+        print(f"fast path ready on http://{host}:{port} (rules only: no LAYA_CHECKPOINT or HEADS_CHECKPOINT)", flush=True)
+        ThreadingHTTPServer((host, port), handler_for(RulesOnly())).serve_forever()
+        return
+    device = os.environ.get("FASTPATH_DEVICE")
+    model = laya_model(laya_dir, device or os.environ.get("LAYA_DEVICE") or None) if laya_dir else heads_model(heads_dir, device or "cpu")
+    # Keep-warm only helps a GPU that clocks down when idle.
+    keep_warm = os.environ.get("FASTPATH_KEEP_WARM_S", "0" if model.device == "cpu" else "5")
     fast = FastPath(
-        checkpoint,
+        model,
         float(os.environ.get("FASTPATH_THRESHOLD", 0.8)),
-        os.environ.get("LAYA_DEVICE") or None,
-        float(os.environ.get("FASTPATH_KEEP_WARM_S", 5)),
+        float(keep_warm),
         float(os.environ.get("FASTPATH_IDLE_UNLOAD_S", 900)),
         float(os.environ.get("FASTPATH_TOOLS_THRESHOLD", 0.97)),
     )
-    print(f"fast path ready on http://{host}:{port} (checkpoint {Path(checkpoint).name}, threshold {fast.threshold})", flush=True)
+    where = model.device or "default device"
+    print(f"fast path ready on http://{host}:{port} ({fast.name} on {where}, threshold {fast.threshold})", flush=True)
     ThreadingHTTPServer((host, port), handler_for(fast)).serve_forever()
 
 
