@@ -54,6 +54,7 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--lr", type=float, default=5e-4, help="LoRA learning rate (gliner2's task_lr)")
+    ap.add_argument("--bf16", action="store_true", help="bf16 instead of fp16 (the fp16 run at lr 5e-4 diverged)")
     ap.add_argument("--lora-r", type=int, default=16)
     args = ap.parse_args()
 
@@ -66,7 +67,7 @@ def main() -> None:
     model = AutoExtractor.from_pretrained(MODEL, revision=REVISION)
     config = TrainingConfig(
         output_dir=args.out, num_epochs=args.epochs, batch_size=args.batch_size, task_lr=args.lr, eval_strategy="no",
-        use_lora=True, lora_r=args.lora_r, lora_alpha=2.0 * args.lora_r, gradient_checkpointing=True, fp16=True,
+        use_lora=True, lora_r=args.lora_r, lora_alpha=2.0 * args.lora_r, gradient_checkpointing=True, fp16=not args.bf16, bf16=args.bf16,
         num_workers=0, logging_steps=50, save_total_limit=1,
     )
     t0 = time.perf_counter()
