@@ -4,6 +4,7 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { BoardAction, CommandEvent, CommandSource, ModelConfig, ObjectMode, TokenUsage } from "@board/shared";
 import { streamCommand } from "../api";
+import type { SpokenLine } from "../voice/clips";
 import { playAnimation } from "./animate";
 import { ActionError, applyAction } from "./executor";
 import { loadObjectFiles } from "./objects";
@@ -26,6 +27,8 @@ export interface LogEntry {
   notes: { kind: "say" | "warn" | "error"; text: string }[];
   /** Which model decided the command (local fast path or cloud LLM) and why; set as soon as the server knows. */
   source?: { kind: CommandSource; model: string; detail: string; ms: number; objects?: ObjectMode; tools?: string[] };
+  /** Spoken commands with saved voice clips: what was heard (before voice corrections) and the clip ids. */
+  spoken?: SpokenLine;
 }
 
 type Snapshot = readonly ExcalidrawElement[];
@@ -77,10 +80,10 @@ export function useCommandRunner(
 
   /** Apply a stream of command events to the board. Shared by the server path and the dev hook. */
   const consume = useCallback(
-    async (text: string, events: AsyncIterable<CommandEvent>, controller: AbortController) => {
+    async (text: string, events: AsyncIterable<CommandEvent>, controller: AbortController, spoken?: SpokenLine) => {
       if (!api) return;
       const id = nextId.current++;
-      setLog((l) => [...l.slice(-19), { id, text, status: "running", actions: 0, notes: [] }]);
+      setLog((l) => [...l.slice(-19), { id, text, status: "running", actions: 0, notes: [], spoken }]);
       setRunning(true);
 
       const snapshot = api.getSceneElementsIncludingDeleted();
@@ -186,7 +189,7 @@ export function useCommandRunner(
   );
 
   const run = useCallback(
-    (text: string) => {
+    (text: string, spoken?: SpokenLine) => {
       if (!api || !text.trim()) return;
       inflight.current?.abort(); // barge-in: a new command cancels the one in flight
       const controller = new AbortController();
@@ -197,7 +200,7 @@ export function useCommandRunner(
         recentIds.current,
         visibleArea(api.getAppState()),
       );
-      return consume(text, streamCommand({ text, scene, config: getConfig() }, controller.signal), controller);
+      return consume(text, streamCommand({ text, scene, config: getConfig() }, controller.signal), controller, spoken);
     },
     [api, consume, getConfig],
   );

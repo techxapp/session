@@ -179,4 +179,30 @@ describe("LineJoiner", () => {
     expect(off.ran).toEqual(["draw a box and"]);
     expect(off.j.holding).toBe(false);
   });
+
+  it("passes on the voice clips of every line a command was joined from", () => {
+    vi.useFakeTimers();
+    const ran: [string, string[]][] = [];
+    const j = new LineJoiner(
+      (t, clips) => ran.push([t, clips]),
+      () => undefined,
+    );
+    j.final("draw a box", "c1");
+    j.final("put it next to", "c2");
+    j.final("...", "c3"); // noise: not part of the command
+    j.final("the database", "c4");
+    j.final("connect them and", "c5");
+    j.flush();
+    j.final("undo"); // not recorded
+    j.final("draw a box and", "c6");
+    j.clear();
+    j.final("zoom in", "c7");
+    expect(ran).toEqual([
+      ["draw a box", ["c1"]],
+      ["put it next to the database", ["c2", "c4"]],
+      ["connect them and", ["c5"]],
+      ["undo", []],
+      ["zoom in", ["c7"]],
+    ]);
+  });
 });

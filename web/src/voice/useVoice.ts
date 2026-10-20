@@ -118,31 +118,35 @@ const dropStop = (text: string) => text.trim().replace(/(\.\.\.|\u2026|[.?!])$/,
  * Turns finished speech lines into commands, holding a line that looksIncomplete until the next one arrives
  * (they are joined) or the speaker stays quiet for `holdMs` (`holdSpeakingMs` once a partial shows they carried
  * on, in case that line never completes). `holdMs` 0 = never hold. `show` gets what the command bar should display.
+ * `run` also gets the saved voice clips the command was spoken in (one per joined line; none unless recording).
  */
 export class LineJoiner {
   private held?: string;
+  private clips: string[] = [];
   private timer?: ReturnType<typeof setTimeout>;
 
   constructor(
-    private run: (text: string) => void,
+    private run: (text: string, clips: string[]) => void,
     private show: (text: string) => void,
     private waits: { holdMs: number; holdSpeakingMs: number } = { holdMs: HOLD_MS, holdSpeakingMs: HOLD_SPEAKING_MS },
   ) {}
 
-  final(text: string) {
+  final(text: string, clip?: string) {
     if (!isCommand(text)) {
       if (this.held) this.wait(this.waits.holdMs); // noise ended a line; keep waiting for real words
       return;
     }
     const line = this.held ? joinLines(this.held, text) : text.trim();
+    const clips = clip ? [...this.clips, clip] : this.clips;
     this.clear();
     if (this.waits.holdMs > 0 && looksIncomplete(line)) {
       this.held = dropStop(line);
+      this.clips = clips;
       this.show(`${this.held} \u2026`);
       this.wait(this.waits.holdMs);
     } else {
       this.show("");
-      this.run(line);
+      this.run(line, clips);
     }
   }
 
@@ -156,10 +160,11 @@ export class LineJoiner {
   /** Run whatever is held now (the mic stopped, the session dozed or ended). */
   flush() {
     const line = this.held;
+    const clips = this.clips;
     this.clear();
     if (line) {
       this.show("");
-      this.run(line);
+      this.run(line, clips);
     }
   }
 
@@ -167,6 +172,7 @@ export class LineJoiner {
   clear() {
     clearTimeout(this.timer);
     this.timer = this.held = undefined;
+    this.clips = [];
   }
 
   get holding() {
@@ -195,7 +201,7 @@ interface Session {
 }
 
 /** Moonshine runs in its own sidecar; Deepgram and AssemblyAI are relayed by the API server (it holds the .env keys). */
-function sttUrl(cloud: boolean) {
+export function sttUrl(cloud: boolean) {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${cloud ? "/api/stt" : "/stt"}`;
 }
 
@@ -239,12 +245,13 @@ function closeMic(s: Session) {
 
 /**
  * Streams the mic to the speech provider `getSpeech` picks (read on each start). `onFinal` gets each completed
- * spoken command (a line that ends mid-command, e.g. on "and", is joined with the next; see LineJoiner);
+ * spoken command (a line that ends mid-command, e.g. on "and", is joined with the next; see LineJoiner) and the
+ * voice clips the sidecar saved for it (Settings "Keep voice clips", Moonshine only);
  * `getKeyterms` is read when a new line starts, so recognition follows the labels on the board.
  * After `idleMs` with nothing heard the session dozes: the speech socket (or browser recognition) closes, the mic
  * stays open, and the first speech-loud audio reconnects, sending the last 2 s first so those words still count.
  */
-export function useVoice(onFinal: (text: string) => void, getKeyterms: () => string[], getSpeech: () => SpeechConfig) {
+export function useVoice(onFinal: (text: string, clips: string[]) => void, getKeyterms: () => string[], getSpeech: () => SpeechConfig) {
   const [state, setState] = useState<VoiceState>("off");
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -299,7 +306,7 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
         s.joiner.partial(msg.text);
       } else if (msg.type === "final") {
         heard(s);
-        s.joiner.final(msg.text);
+        s.joiner.final(msg.text, msg.clip);
       } else if (msg.type === "error") s.error = msg.message;
       else if (msg.type === "stopped") end(s);
     };
@@ -317,7 +324,7 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
       const terms = cb.current.getKeyterms();
       s.terms = terms.join("\n");
       s.line = undefined;
-      const which = cloud ? { provider: s.speech.provider, apiKey: s.speech.apiKey, turn: s.speech.turn } : {};
+      const which = cloud ? { provider: s.speech.provider, apiKey: s.speech.apiKey, turn: s.speech.turn } : { record: s.speech.keepClips };
       ws.send(JSON.stringify({ type: "start", sampleRate: s.ctx.sampleRate, keyterms: terms, ...which }));
       early.forEach((frame) => ws.send(frame));
       s.frame = (f) => ws.readyState === WebSocket.OPEN && ws.send(f);
@@ -393,7 +400,7 @@ export function useVoice(onFinal: (text: string) => void, getKeyterms: () => str
         closed: false,
         speech,
         joiner: new LineJoiner(
-          (text) => cb.current.onFinal(text),
+          (text, clips) => cb.current.onFinal(text, clips),
           (text) => session.current === s && setInterim(text),
           speech,
         ),

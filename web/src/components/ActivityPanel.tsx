@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { TokenUsage } from "@board/shared";
 import type { LogEntry } from "../board/useCommandRunner";
+import { sendClipLabels, type SpokenLine } from "../voice/clips";
 import { deriveRule, normLine, type Corrections } from "../voice/corrections";
 import { modelName } from "./StatusPill";
 
@@ -47,6 +48,8 @@ interface Editing {
   meant?: string;
   /** Captured line or rule the saved rule replaces. */
   fromId?: string;
+  /** The line's saved voice clips: the fixed text labels them. */
+  spoken?: SpokenLine;
 }
 
 /** Collapsible activity log on the right edge; newest command first. Below it, the voice corrections (voice/corrections.ts). */
@@ -66,17 +69,18 @@ export function ActivityPanel({ log, running, onUndo, corrections }: Props) {
   const { rules, captured, saveRule, remove } = corrections;
   if (log.length === 0 && rules.length === 0 && captured.length === 0) return null;
   const entries = [...log].reverse();
-  const save = (find: string, replace: string) => {
+  const save = (find: string, replace: string, meant?: string) => {
     saveRule(find, replace, editing?.fromId);
+    if (editing?.spoken && meant?.trim()) void sendClipLabels({ ...editing.spoken, text: meant.trim() });
     setEditing(null);
   };
-  const editor = (e: Editing) => <FixEditor key={e.key} heard={e.heard} meant={e.meant} onSave={save} onCancel={() => setEditing(null)} />;
-  const editRow = (entry: LogEntry) =>
-    setEditing({
-      key: `log-${entry.id}`,
-      heard: entry.text,
-      fromId: captured.find((c) => normLine(c.text) === normLine(entry.text))?.id,
-    });
+  const editor = (e: Editing) => (
+    <FixEditor key={e.key} heard={e.heard} meant={e.meant} labels={Boolean(e.spoken)} onSave={save} onCancel={() => setEditing(null)} />
+  );
+  const editRow = (entry: LogEntry) => {
+    const from = captured.find((c) => normLine(c.text) === normLine(entry.text));
+    setEditing({ key: `log-${entry.id}`, heard: entry.text, fromId: from?.id, spoken: entry.spoken ?? from?.spoken });
+  };
 
   if (!open) {
     return (
@@ -128,7 +132,7 @@ export function ActivityPanel({ log, running, onUndo, corrections }: Props) {
                     </span>
                     <button
                       className="row-undo"
-                      onClick={() => setEditing({ key: `cap-${c.id}`, heard: c.text, fromId: c.id })}
+                      onClick={() => setEditing({ key: `cap-${c.id}`, heard: c.text, fromId: c.id, spoken: c.spoken })}
                       title="Fix this line"
                     >
                       <Pencil size={12} /> Fix
@@ -174,16 +178,19 @@ export function ActivityPanel({ log, running, onUndo, corrections }: Props) {
 /**
  * Fix a misheard line: type what it should have been; the rule is the words that differ ("set june" -> "set zoom"),
  * shown in two fields that can be widened or narrowed before saving. Enter saves, Escape cancels.
+ * `labels`: the line has saved voice clips, and what is typed is also sent as their true text (`onSave`'s `meant`).
  */
 function FixEditor({
   heard,
   meant: initialMeant,
+  labels,
   onSave,
   onCancel,
 }: {
   heard: string;
   meant?: string;
-  onSave: (find: string, replace: string) => void;
+  labels?: boolean;
+  onSave: (find: string, replace: string, meant?: string) => void;
   onCancel: () => void;
 }) {
   const [meant, setMeant] = useState(initialMeant ?? heard);
@@ -194,10 +201,11 @@ function FixEditor({
   const derived = deriveRule(heard, meant);
   const rule = manual ?? derived ?? { find: "", replace: "" };
   const canSave = Boolean(rule.find.trim()) && normLine(rule.find) !== normLine(rule.replace);
+  const meantArg = initialMeant === undefined ? meant : undefined;
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation(); // keep Excalidraw shortcuts off the board while typing
     if (e.key === "Escape") onCancel();
-    else if (e.key === "Enter" && canSave) onSave(rule.find, rule.replace);
+    else if (e.key === "Enter" && canSave) onSave(rule.find, rule.replace, meantArg);
   };
 
   return (
@@ -225,11 +233,14 @@ function FixEditor({
         </label>
       </div>
       <div className="fix-actions">
-        <span className="fix-hint">Only these words are replaced in later spoken lines.</span>
+        <span className="fix-hint">
+          Only these words are replaced in later spoken lines.
+          {labels && initialMeant === undefined && " Type what you said: it also labels the saved recording."}
+        </span>
         <button className="row-undo" onClick={onCancel}>
           Cancel
         </button>
-        <button className="row-undo is-primary" onClick={() => onSave(rule.find, rule.replace)} disabled={!canSave}>
+        <button className="row-undo is-primary" onClick={() => onSave(rule.find, rule.replace, meantArg)} disabled={!canSave}>
           Save
         </button>
       </div>

@@ -93,4 +93,10 @@ describe("settings -> speech config", () => {
       holdSpeakingMs: 1000,
     });
   });
+
+  it("keeps voice clips only when asked, and only for Moonshine", () => {
+    expect(speechConfig(with_({ speech: { keys: {}, provider: "moonshine" } }), health).keepClips).toBe(false);
+    expect(speechConfig(with_({ speech: { keys: {}, provider: "moonshine", keepClips: true } }), health).keepClips).toBe(true);
+    expect(speechConfig(with_({ speech: { keys: {}, provider: "deepgram", keepClips: true } }), health).keepClips).toBe(false);
+  });
 });

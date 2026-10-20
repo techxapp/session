@@ -2,21 +2,30 @@
 Speech-to-text sidecar: streams microphone audio from the browser into Moonshine (on-device, CPU) and sends text back.
 
 WebSocket on STT_PORT (the web dev server proxies /stt here). One connection is one listening session; a new
-connection takes over and closes the previous one (one transcriber, and its key terms, are shared).
-  client -> server  {"type": "start", "sampleRate": 48000, "keyterms": [...]}   first message
+session takes over and closes the previous one (one transcriber, and its key terms, are shared).
+  client -> server  {"type": "start", "sampleRate": 48000, "keyterms": [...], "record": false}   first message
                     binary frames: mono float32 PCM at that rate (Moonshine resamples to 16 kHz itself)
                     {"type": "keyterms", "terms": [...]}   board labels to bias decoding toward ("Postgres")
                     {"type": "stop"}   finish the line being spoken, answer "stopped" and close
-  server -> client  {"type": "ready", "model"}
+                    {"type": "label", "labels": [{"clips", "heard", "text"}]}   no "start" needed; answered "labelled"
+  server -> client  {"type": "ready", "model", "recording"}
                     {"type": "partial", "id", "text"}       the line being spoken; unstable, display only
-                    {"type": "final", "id", "text", "ms"}   Moonshine's VAD ended the line: run it as a command
-                    {"type": "stopped"} | {"type": "error", "message"}
+                    {"type": "final", "id", "text", "ms", "clip"?}   Moonshine's VAD ended the line: run it as a command
+                    {"type": "labelled", "count"} | {"type": "stopped"} | {"type": "error", "message"}
+
+Voice clips (for fine-tuning Moonshine on your own voice; see stt/build_manifest.py): with "record": true, each
+final line's audio (Moonshine's own 16 kHz cut of it, i.e. what the model heard) is saved as
+STT_CLIPS_DIR/audio/<clip>.wav plus a clips.jsonl row {id, audio, heard, seconds, model, at}, and the final message
+names the clip. When a line is fixed in the activity panel, the browser sends a label: the true text for one or
+more clips (a command joined from two lines), appended to labels.jsonl {clips, heard, text, at}. Nothing is
+recorded unless the browser asks.
 
 Setup (this machine): its own venv, since Moonshine needs no torch (it runs on CPU through a bundled onnxruntime):
   uv venv F:/temp/moonshine-venv --python "C:/Program Files/Python310/python.exe"
   uv pip install --python F:/temp/moonshine-venv/Scripts/python.exe -r stt/requirements.txt
   F:/temp/moonshine-venv/Scripts/python stt/server.py
 Env: STT_MODEL (small | medium; streaming English, default small), STT_PORT (8789), STT_HOST (127.0.0.1),
+     STT_CLIPS_DIR (voice clips; default stt/clips, gitignored),
      MOONSHINE_VOICE_CACHE (Moonshine's model cache; the model downloads there on first start),
      MOONSHINE_ORT_SINGLE_THREAD (defaults to 1 here: onnxruntime's thread pool spin-waits, so the default used
      ~4 cores for ~0.2 s less delay; single-threaded Small takes about half a core).
@@ -30,6 +39,8 @@ import os
 import re
 import sys
 import time
+import wave
+from pathlib import Path
 
 os.environ.setdefault("MOONSHINE_ORT_SINGLE_THREAD", "1")  # read by the native library, so set before loading it
 
@@ -38,11 +49,16 @@ from moonshine_voice.download import get_model_for_language  # noqa: E402
 from moonshine_voice.transcriber import ModelArch, Transcriber, TranscriptEventListener  # noqa: E402
 from websockets.asyncio.server import ServerConnection, serve  # noqa: E402
 from websockets.exceptions import ConnectionClosed  # noqa: E402
+from websockets.http11 import Request, Response  # noqa: E402
 
 ARCHS = {"small": ModelArch.SMALL_STREAMING, "medium": ModelArch.MEDIUM_STREAMING}
 # A long key-term list costs accuracy on the words not in it.
 MAX_KEYTERMS = 50
 MAX_KEYTERM_CHARS = 40
+CLIP_RATE = 16000  # Moonshine hands each line's audio over at its own rate
+MAX_LABELS = 100
+MAX_LABEL_CHARS = 500
+CLIP_ID = re.compile(r"^[\w-]{1,64}$")
 
 
 def clean_keyterms(terms: object) -> list[str]:
@@ -57,11 +73,65 @@ def clean_keyterms(terms: object) -> list[str]:
     return out[-MAX_KEYTERMS:]
 
 
+def now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def one_line(text: object) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()[:MAX_LABEL_CHARS]
+
+
+class Clips:
+    """The voice-clip folder: each line's audio + clips.jsonl, and labels.jsonl with the fixed text."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        self.session = time.strftime("%Y%m%d-%H%M%S")
+        self.count = 0
+
+    def save(self, audio: list[float] | None, heard: str, model: str) -> str | None:
+        """Write one line's audio; returns the clip id (None if there was no audio)."""
+        if not audio:
+            return None
+        self.count += 1
+        clip = f"{self.session}-{self.count:03d}"
+        pcm = (np.clip(np.asarray(audio, dtype=np.float32), -1, 1) * 32767).astype("<i2")
+        (self.folder / "audio").mkdir(parents=True, exist_ok=True)
+        with wave.open(str(self.folder / "audio" / f"{clip}.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(CLIP_RATE)
+            w.writeframes(pcm.tobytes())
+        seconds = round(len(pcm) / CLIP_RATE, 2)
+        self.append("clips.jsonl", {"id": clip, "audio": f"audio/{clip}.wav", "heard": heard, "seconds": seconds, "model": model, "at": now()})
+        return clip
+
+    def label(self, labels: object) -> int:
+        """Append the browser's labels ({clips, heard, text}); malformed ones are skipped. Returns how many were kept."""
+        kept = 0
+        for item in labels[:MAX_LABELS] if isinstance(labels, list) else []:
+            clips = item.get("clips") if isinstance(item, dict) else None
+            if not isinstance(clips, list) or not clips or not all(isinstance(c, str) and CLIP_ID.match(c) for c in clips):
+                continue
+            text = one_line(item.get("text"))
+            if text:
+                self.append("labels.jsonl", {"clips": clips, "heard": one_line(item.get("heard")), "text": text, "at": now()})
+                kept += 1
+        return kept
+
+    def append(self, name: str, row: dict) -> None:
+        self.folder.mkdir(parents=True, exist_ok=True)
+        with open(self.folder / name, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
 class Lines(TranscriptEventListener):
     """Turns a transcription pass's events (fired on the worker thread) into messages for the browser."""
 
-    def __init__(self) -> None:
+    def __init__(self, model: str) -> None:
         self.out: list[dict] = []
+        self.model = model
+        self.clips: Clips | None = None  # set when the browser asked to keep voice clips
 
     def on_line_text_changed(self, event) -> None:
         if not event.line.is_complete:
@@ -69,8 +139,18 @@ class Lines(TranscriptEventListener):
 
     def on_line_completed(self, event) -> None:
         line = event.line
-        self.out.append({"type": "final", "id": str(line.line_id), "text": line.text.strip(), "ms": line.last_transcription_latency_ms})
-        sys.stderr.write(f"final ({line.last_transcription_latency_ms} ms): {line.text.strip()}\n")
+        text = line.text.strip()
+        msg = {"type": "final", "id": str(line.line_id), "text": text, "ms": line.last_transcription_latency_ms}
+        if self.clips is not None and text:
+            try:
+                clip = self.clips.save(line.audio_data, text, self.model)
+                if clip:
+                    msg["clip"] = clip
+            except OSError as err:
+                sys.stderr.write(f"couldn't save the clip: {err}\n")
+        self.out.append(msg)
+        saved = f" -> {msg['clip']}" if "clip" in msg else ""
+        sys.stderr.write(f"final ({line.last_transcription_latency_ms} ms){saved}: {text}\n")
 
     def take(self) -> list[dict]:
         out, self.out = self.out, []
@@ -80,7 +160,7 @@ class Lines(TranscriptEventListener):
 class Engine:
     """One loaded model shared by the sessions; native calls run one at a time on a worker thread."""
 
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str, clips_dir: Path) -> None:
         t = time.perf_counter()
         path, arch = get_model_for_language("en", ARCHS[model])
         self.transcriber = Transcriber(path, arch)
@@ -88,6 +168,7 @@ class Engine:
         self.lock = asyncio.Lock()
         self.terms: list[str] | None = None
         self.current: ServerConnection | None = None
+        self.clips = Clips(clips_dir)
         sys.stderr.write(f"loaded {self.name} in {time.perf_counter() - t:.1f}s\n")
 
     async def call(self, fn, *args):
@@ -102,10 +183,7 @@ class Engine:
 
 
 async def session(engine: Engine, ws: ServerConnection) -> None:
-    if engine.current is not None:
-        await engine.current.close(1000, "Listening moved to another tab.")
-    engine.current = ws
-    lines = Lines()
+    lines = Lines(engine.name)
     stream = None
     rate = 16000
     audio: list[np.ndarray] = []
@@ -149,15 +227,22 @@ async def session(engine: Engine, ws: ServerConnection) -> None:
                     wake.set()
                 continue
             m = json.loads(msg)
-            if m.get("type") == "start" and stream is None:
+            if m.get("type") == "label":
+                # Also on a connection of its own (the browser sends fixes whether or not the mic is on); takes nothing over.
+                await send([{"type": "labelled", "count": engine.clips.label(m.get("labels"))}])
+            elif m.get("type") == "start" and stream is None:
+                if engine.current is not None and engine.current is not ws:
+                    await engine.current.close(1000, "Listening moved to another tab.")
+                engine.current = ws
                 rate = int(m.get("sampleRate") or 16000)
+                lines.clips = engine.clips if m.get("record") is True else None
                 await engine.set_keyterms(m.get("keyterms"))
                 stream = await engine.call(engine.transcriber.create_stream)
                 stream.add_listener(lines)
                 await engine.call(stream.start)
                 task = asyncio.create_task(worker())
-                await send([{"type": "ready", "model": engine.name}])
-                sys.stderr.write(f"listening ({rate} Hz)\n")
+                await send([{"type": "ready", "model": engine.name, "recording": lines.clips is not None}])
+                sys.stderr.write(f"listening ({rate} Hz{', keeping clips' if lines.clips else ''})\n")
             elif m.get("type") == "keyterms":
                 await engine.set_keyterms(m.get("terms"))
             elif m.get("type") == "stop" and task is not None:
@@ -176,7 +261,16 @@ async def session(engine: Engine, ws: ServerConnection) -> None:
             await engine.call(stream.close)
         if engine.current is ws:
             engine.current = None
-        sys.stderr.write("stopped listening\n")
+        if stream is not None:
+            sys.stderr.write("stopped listening\n")
+
+
+def same_origin(ws: ServerConnection, request: Request) -> Response | None:
+    """Refuse pages from other sites: WebSockets skip CORS, and this socket writes files (clips, labels)."""
+    origin = request.headers.get("Origin")
+    if origin and origin.split("://", 1)[-1] != request.headers.get("Host"):
+        return ws.respond(403, "Origin not allowed\n")
+    return None
 
 
 async def main() -> None:
@@ -184,8 +278,9 @@ async def main() -> None:
     if model not in ARCHS:
         sys.exit(f"STT_MODEL must be one of {', '.join(ARCHS)}")
     host, port = os.environ.get("STT_HOST", "127.0.0.1"), int(os.environ.get("STT_PORT", 8789))
-    engine = Engine(model)
-    async with serve(lambda ws: session(engine, ws), host, port):
+    clips_dir = Path(os.environ.get("STT_CLIPS_DIR") or Path(__file__).resolve().parent / "clips")
+    engine = Engine(model, clips_dir)
+    async with serve(lambda ws: session(engine, ws), host, port, process_request=same_origin):
         print(f"speech-to-text ready on ws://{host}:{port} ({engine.name})", flush=True)
         await asyncio.get_running_loop().create_future()
 

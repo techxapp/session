@@ -9,3 +9,4 @@ eval/.semif/
 eval/results/
 __pycache__/
 .venv-stt/
+stt/clips/

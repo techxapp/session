@@ -90,8 +90,8 @@ export interface SpeechSettings {
   holdMs?: number;
   /** ... and how long once the speaker has carried on; default HOLD_SPEAKING_MS. */
   holdSpeakingMs?: number;
-  /** A spoken line with no verb ("apple and mango") runs as "draw ..." (voice/corrections.ts#withDefaultVerb); default on. */
-  defaultDraw?: boolean;
+  /** Moonshine only: the sidecar saves each spoken line's audio (stt/clips) to fine-tune on; default off. */
+  keepClips?: boolean;
 }
 
 export type WakeSensitivity = "high" | "normal" | "low" | "lowest";
@@ -116,6 +116,8 @@ export interface SpeechConfig {
   /** Line joining waits (ms); holdMs 0 = run every line as it ends. */
   holdMs: number;
   holdSpeakingMs: number;
+  /** Ask the Moonshine sidecar to save each line's audio. */
+  keepClips: boolean;
 }
 
 const STORAGE_KEY = "voice-board:settings:v1";
@@ -188,6 +190,7 @@ export function speechConfig(s: Settings, health: HealthInfo | null): SpeechConf
     turn: provider === "assemblyai" ? cleanAssemblyTurn(s.speech.assemblyTurn) : undefined,
     holdMs: clampMs(s.speech.holdMs, HOLD_MS, HOLD_LIMITS.holdMs),
     holdSpeakingMs: clampMs(s.speech.holdSpeakingMs, HOLD_SPEAKING_MS, HOLD_LIMITS.holdSpeakingMs),
+    keepClips: provider === "moonshine" && s.speech.keepClips === true,
   };
 }
 

@@ -5,12 +5,10 @@ import {
   addCaptured,
   addRule,
   applyCorrections,
-  correctLine,
   deriveRule,
   loadCorrections,
   removeEntry,
   ruleKeyterms,
-  withDefaultVerb,
   type Correction,
   type CorrectionStore,
 } from "./corrections";
@@ -74,33 +72,6 @@ describe("applyCorrections", () => {
     const r = [rule("apple", "draw apple")];
     expect(applyCorrections("apple and mango", r)).toBe("draw apple and mango");
     expect(applyCorrections("draw apple and mango", r)).toBe("draw apple and mango");
-  });
-});
-
-describe("withDefaultVerb", () => {
-  it.each([
-    ["apple and mango", "draw apple and mango"],
-    ["a red box", "draw a red box"],
-    ["three trees", "draw three trees"],
-    ["a mind map", "draw a mind map"],
-  ])("%s -> %s", (input, out) => expect(withDefaultVerb(input)).toBe(out));
-
-  it.each(["move the box left", "zoom in", "what is this", "thanks", "okay", "is it done", "a box?", "250%", ""])(
-    "leaves %j alone",
-    (input) => expect(withDefaultVerb(input)).toBe(input),
-  );
-
-  it("leaves long lines alone", () => {
-    const long = "one two three four five six seven eight nine";
-    expect(withDefaultVerb(long)).toBe(long);
-  });
-});
-
-describe("correctLine", () => {
-  it("runs the rules, then the default verb (when on)", () => {
-    const r = [rule("aple", "apple")];
-    expect(correctLine("aple and mango", r, true)).toBe("draw apple and mango");
-    expect(correctLine("aple and mango", r, false)).toBe("apple and mango");
   });
 });
 

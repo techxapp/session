@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SpokenLine } from "./clips";
 
 /**
  * Learned fixes for misheard voice lines. A rule replaces one segment of a line ("set june" -> "set zoom") and
@@ -16,6 +17,8 @@ export interface Correction {
 export interface Captured {
   id: string;
   text: string;
+  /** Its saved voice clips, which a fix labels (clips.ts). */
+  spoken?: SpokenLine;
 }
 
 export interface CorrectionStore {
@@ -26,29 +29,6 @@ export interface CorrectionStore {
 const STORAGE_KEY = "voice-board:corrections:v1";
 export const MAX_RULES = 100;
 export const MAX_CAPTURED = 50;
-
-/** Verbs that make a line a command already; a short line with none of these is taken as things to draw. */
-export const COMMAND_VERBS = new Set(
-  `add draw put place create insert make sketch write label rename relabel
-   delete remove erase drop scrap clear wipe reset undo revert redo
-   move nudge shift push drag slide bump bring send
-   connect link join
-   color colour paint turn change set resize enlarge shrink grow expand increase decrease reduce raise lower
-   scroll pan zoom go jump take focus show fit center centre
-   plot animate walk run fly drive chase
-   grab get have want need replace swap`
-    .split(/\s+/)
-    .filter(Boolean),
-);
-/** Words that mark chatter or a question rather than a list of things: "what is this", "thanks", "I think so". */
-const NOT_THINGS = new Set(
-  `what how why when where who which can could would should will shall is are was were do does did am
-   i i'm im me my we us our you your he she they it them these those
-   yes yeah yep no nope ok okay thanks thank hello hi hey bye sorry please wait stop hmm um uh oh`
-    .split(/\s+/)
-    .filter(Boolean),
-);
-const MAX_DRAW_WORDS = 8;
 
 /** Lowercase word without surrounding punctuation ("June," -> "june"); "%" and digits stay ("250%"). */
 export const cleanWord = (w: string) => w.toLowerCase().replace(/^[^\p{L}\p{N}%]+|[^\p{L}\p{N}%']+$/gu, "");
@@ -124,23 +104,6 @@ function indexOf(hay: string[], needle: string[]) {
 const equalAt = (toks: string[], start: number, seq: string[]) =>
   start >= 0 && start + seq.length <= toks.length && seq.every((w, k) => toks[start + k] === w);
 
-/** "apple and mango" -> "draw apple and mango": a short line with no command verb and no chatter words names things to draw. */
-export function withDefaultVerb(text: string): string {
-  const t = text.trim();
-  if (!t || t.endsWith("?")) return text;
-  const ws = cleanWords(t);
-  if (!ws.length || ws.length > MAX_DRAW_WORDS) return text;
-  if (ws.some((w) => COMMAND_VERBS.has(w) || NOT_THINGS.has(w))) return text;
-  if (!ws.some((w) => /\p{L}/u.test(w))) return text;
-  return `draw ${t}`;
-}
-
-/** What a spoken line runs as: the stored rules, then (if on) the default "draw". */
-export function correctLine(text: string, rules: readonly Correction[], defaultDraw: boolean): string {
-  const fixed = applyCorrections(text, rules);
-  return defaultDraw ? withDefaultVerb(fixed) : fixed;
-}
-
 /** New words a rule teaches, for the recogniser's key terms: replace words that aren't in find. */
 export function ruleKeyterms(rules: readonly Correction[], max = 10): string[] {
   const out = new Map<string, string>();
@@ -168,10 +131,11 @@ export function addRule(store: CorrectionStore, rule: Omit<Correction, "id">, fr
   return { rules, captured: base.captured };
 }
 
-export function addCaptured(store: CorrectionStore, text: string): CorrectionStore {
+export function addCaptured(store: CorrectionStore, text: string, spoken?: SpokenLine): CorrectionStore {
   const key = norm(text);
   if (!key || store.captured.some((c) => norm(c.text) === key)) return store;
-  return { ...store, captured: [...store.captured, { id: newId(), text: text.trim() }].slice(-MAX_CAPTURED) };
+  const entry: Captured = spoken ? { id: newId(), text: text.trim(), spoken } : { id: newId(), text: text.trim() };
+  return { ...store, captured: [...store.captured, entry].slice(-MAX_CAPTURED) };
 }
 
 export const removeEntry = (store: CorrectionStore, id: string): CorrectionStore => ({
@@ -209,13 +173,13 @@ export function useCorrections() {
   ref.current = store;
   useEffect(() => saveCorrections(store), [store]);
 
-  const capture = useCallback((text: string) => setStore((s) => addCaptured(s, text)), []);
+  const capture = useCallback((text: string, spoken?: SpokenLine) => setStore((s) => addCaptured(s, text, spoken)), []);
   const saveRule = useCallback(
     (find: string, replace: string, fromId?: string) => setStore((s) => addRule(s, { find, replace }, fromId)),
     [],
   );
   const remove = useCallback((id: string) => setStore((s) => removeEntry(s, id)), []);
-  const apply = useCallback((text: string, defaultDraw: boolean) => correctLine(text, ref.current.rules, defaultDraw), []);
+  const apply = useCallback((text: string) => applyCorrections(text, ref.current.rules), []);
   const keyterms = useCallback(() => ruleKeyterms(ref.current.rules), []);
 
   return useMemo(

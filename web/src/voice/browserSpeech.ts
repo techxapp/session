@@ -6,9 +6,9 @@
  */
 
 export type SttMessage =
-  | { type: "ready"; model: string }
+  | { type: "ready"; model: string; recording?: boolean }
   | { type: "partial"; id: string; text: string }
-  | { type: "final"; id: string; text: string; ms: number }
+  | { type: "final"; id: string; text: string; ms: number; clip?: string } // clip: the saved audio (stt/server.py, "record")
   | { type: "stopped" }
   | { type: "error"; message: string };
 

@@ -14,6 +14,7 @@ import { CommandDock } from "./components/CommandDock";
 import { PlotHover } from "./components/PlotHover";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPill, type ServerStatus } from "./components/StatusPill";
+import { sendClipLabels } from "./voice/clips";
 import { useCorrections } from "./voice/corrections";
 import { boardKeyterms, useVoice } from "./voice/useVoice";
 import {
@@ -70,7 +71,7 @@ export default function App() {
     for (const e of runner.log) {
       if (e.status !== "ignored" || capturedIds.current.has(e.id)) continue;
       capturedIds.current.add(e.id);
-      capture(e.text);
+      capture(e.text, e.spoken);
     }
   }, [runner.log, capture]);
 
@@ -80,15 +81,17 @@ export default function App() {
   const spoken = useRef<Promise<unknown>>(Promise.resolve());
   const { apply: correct, keyterms: learnedKeyterms } = corrections;
   const onSpoken = useCallback(
-    (text: string) => {
-      const line = correct(text, latest.current.settings.speech.defaultDraw ?? true);
-      spoken.current = spoken.current.then(() => runRef.current(line)).catch(() => undefined);
+    (text: string, clips: string[]) => {
+      const line = correct(text);
+      const said = clips.length ? { heard: text, clips } : undefined; // saved voice clips, labelled if the line is fixed
+      spoken.current = spoken.current.then(() => runRef.current(line, said)).catch(() => undefined);
     },
     [correct],
   );
   const getKeyterms = useCallback(() => (api ? boardKeyterms(api.getSceneElements(), learnedKeyterms()) : []), [api, learnedKeyterms]);
   const getSpeech = useCallback(() => speechConfig(latest.current.settings, latest.current.health ?? null), []);
   const voice = useVoice(onSpoken, getKeyterms, getSpeech);
+  useEffect(() => void sendClipLabels(), []); // voice-clip labels the speech server missed last time (no-op when none)
 
   const status: ServerStatus = useMemo(() => {
     if (health === undefined) return { state: "checking" };
