@@ -7,6 +7,10 @@ export default defineConfig({
     // Excalidraw reads this at runtime.
     "process.env.IS_PREACT": JSON.stringify("false"),
   },
+  build: {
+    // Two pages: the board, and the voice-clips dashboard (clips.html).
+    rollupOptions: { input: { main: "index.html", clips: "clips.html" } },
+  },
   server: {
     port: 5173,
     proxy: {

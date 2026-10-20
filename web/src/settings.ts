@@ -90,7 +90,7 @@ export interface SpeechSettings {
   holdMs?: number;
   /** ... and how long once the speaker has carried on; default HOLD_SPEAKING_MS. */
   holdSpeakingMs?: number;
-  /** Moonshine only: the sidecar saves each spoken line's audio (stt/clips) to fine-tune on; default off. */
+  /** Save each spoken line's audio (stt/clips) to fine-tune Moonshine on; not for "browser"; default off. */
   keepClips?: boolean;
 }
 
@@ -116,7 +116,7 @@ export interface SpeechConfig {
   /** Line joining waits (ms); holdMs 0 = run every line as it ends. */
   holdMs: number;
   holdSpeakingMs: number;
-  /** Ask the Moonshine sidecar to save each line's audio. */
+  /** Ask the speech server (sidecar or cloud relay) to save each line's audio. */
   keepClips: boolean;
 }
 
@@ -190,7 +190,7 @@ export function speechConfig(s: Settings, health: HealthInfo | null): SpeechConf
     turn: provider === "assemblyai" ? cleanAssemblyTurn(s.speech.assemblyTurn) : undefined,
     holdMs: clampMs(s.speech.holdMs, HOLD_MS, HOLD_LIMITS.holdMs),
     holdSpeakingMs: clampMs(s.speech.holdSpeakingMs, HOLD_SPEAKING_MS, HOLD_LIMITS.holdSpeakingMs),
-    keepClips: provider === "moonshine" && s.speech.keepClips === true,
+    keepClips: provider !== "browser" && s.speech.keepClips === true, // the browser gives the page no audio
   };
 }
 

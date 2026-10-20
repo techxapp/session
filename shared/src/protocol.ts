@@ -100,6 +100,43 @@ export function cleanAssemblyTurn(t: unknown): AssemblyTurn {
   return out;
 }
 
+/**
+ * Saved voice clips (fine-tuning data, Settings "Keep voice clips"). Moonshine's are written by the speech sidecar,
+ * Deepgram's/AssemblyAI's by the API server's relay, all into one folder (STT_CLIPS_DIR); the API server lists,
+ * labels and deletes them (/api/clips, the clips dashboard at /clips.html).
+ */
+export type ClipSource = "moonshine" | "deepgram" | "assemblyai";
+export const CLIP_SOURCES: ClipSource[] = ["moonshine", "deepgram", "assemblyai"];
+
+/** One recorded line: a clips.jsonl row. `heard` is the transcript from `source` (`model` = "deepgram:nova-3"...). */
+export interface ClipInfo {
+  id: string;
+  heard: string;
+  seconds: number;
+  source: ClipSource;
+  model: string;
+  at: string;
+}
+
+/** unreviewed = no label yet; confirmed = labelled with what was heard; fixed = labelled with other text. */
+export type ClipStatus = "unreviewed" | "confirmed" | "fixed";
+
+/** A training example as stt/build_manifest.py makes it: one clip, or the clips of a command joined from lines. */
+export interface ClipItem {
+  /** Clip ids joined with "+". */
+  key: string;
+  clips: ClipInfo[];
+  /** What the recogniser heard, joined over the clips. */
+  heard: string;
+  /** The label's text, if labelled. */
+  text?: string;
+  status: ClipStatus;
+  source: ClipSource;
+  seconds: number;
+  /** When the first clip was recorded. */
+  at: string;
+}
+
 /** GET /api/health: the server's .env defaults (never its keys). */
 export interface HealthInfo {
   ok: boolean;

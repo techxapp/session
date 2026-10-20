@@ -1,6 +1,7 @@
 import { buildApp } from "./app";
 import { fastPathFromEnv, withFastPath } from "./fastpath";
 import { buildProvider, listModels, providerFromEnv, settingsFromEnv, type Provider } from "./provider";
+import { ClipStore, clipsDirFromEnv } from "./clips";
 import { sttSettingsFromEnv } from "./stt";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -19,6 +20,8 @@ const app = buildApp(local(provider), {
   info: { baseUrl: settings.baseUrl, keyedEndpoints: [...settings.keys.keys()], effort: settings.effort },
   // STT_PROVIDER + DEEPGRAM_API_KEY / ASSEMBLYAI_API_KEY: cloud speech-to-text on the /api/stt WebSocket.
   stt: sttSettingsFromEnv(),
+  // STT_CLIPS_DIR: saved voice clips (shared with the Moonshine sidecar), for /api/clips and recording cloud speech.
+  clips: new ClipStore(clipsDirFromEnv()),
 });
 
 app.listen({ port: PORT, host: "0.0.0.0" }).catch((err) => {

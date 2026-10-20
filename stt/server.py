@@ -7,25 +7,25 @@ session takes over and closes the previous one (one transcriber, and its key ter
                     binary frames: mono float32 PCM at that rate (Moonshine resamples to 16 kHz itself)
                     {"type": "keyterms", "terms": [...]}   board labels to bias decoding toward ("Postgres")
                     {"type": "stop"}   finish the line being spoken, answer "stopped" and close
-                    {"type": "label", "labels": [{"clips", "heard", "text"}]}   no "start" needed; answered "labelled"
   server -> client  {"type": "ready", "model", "recording"}
                     {"type": "partial", "id", "text"}       the line being spoken; unstable, display only
                     {"type": "final", "id", "text", "ms", "clip"?}   Moonshine's VAD ended the line: run it as a command
-                    {"type": "labelled", "count"} | {"type": "stopped"} | {"type": "error", "message"}
+                    {"type": "stopped"} | {"type": "error", "message"}
 
 Voice clips (for fine-tuning Moonshine on your own voice; see stt/build_manifest.py): with "record": true, each
 final line's audio (Moonshine's own 16 kHz cut of it, i.e. what the model heard) is saved as
-STT_CLIPS_DIR/audio/<clip>.wav plus a clips.jsonl row {id, audio, heard, seconds, model, at}, and the final message
-names the clip. When a line is fixed in the activity panel, the browser sends a label: the true text for one or
-more clips (a command joined from two lines), appended to labels.jsonl {clips, heard, text, at}. Nothing is
-recorded unless the browser asks.
+STT_CLIPS_DIR/audio/<clip>.wav plus a clips.jsonl row {id, audio, heard, seconds, source: "moonshine", model, at},
+and the final message names the clip. Nothing is recorded unless the browser asks. Everything else about the folder
+(labels from the activity panel and the clips dashboard, deleting, Deepgram/AssemblyAI clips) is the API server's
+(server/src/clips.ts).
 
 Setup (this machine): its own venv, since Moonshine needs no torch (it runs on CPU through a bundled onnxruntime):
   uv venv F:/temp/moonshine-venv --python "C:/Program Files/Python310/python.exe"
   uv pip install --python F:/temp/moonshine-venv/Scripts/python.exe -r stt/requirements.txt
   F:/temp/moonshine-venv/Scripts/python stt/server.py
 Env: STT_MODEL (small | medium; streaming English, default small), STT_PORT (8789), STT_HOST (127.0.0.1),
-     STT_CLIPS_DIR (voice clips; default stt/clips, gitignored),
+     STT_CLIPS_DIR (voice clips; default stt/clips, gitignored; a relative path is from the repo root, as the API
+     server reads it),
      MOONSHINE_VOICE_CACHE (Moonshine's model cache; the model downloads there on first start),
      MOONSHINE_ORT_SINGLE_THREAD (defaults to 1 here: onnxruntime's thread pool spin-waits, so the default used
      ~4 cores for ~0.2 s less delay; single-threaded Small takes about half a core).
@@ -56,9 +56,8 @@ ARCHS = {"small": ModelArch.SMALL_STREAMING, "medium": ModelArch.MEDIUM_STREAMIN
 MAX_KEYTERMS = 50
 MAX_KEYTERM_CHARS = 40
 CLIP_RATE = 16000  # Moonshine hands each line's audio over at its own rate
-MAX_LABELS = 100
-MAX_LABEL_CHARS = 500
-CLIP_ID = re.compile(r"^[\w-]{1,64}$")
+MAX_TEXT_CHARS = 500
+REPO = Path(__file__).resolve().parent.parent
 
 
 def clean_keyterms(terms: object) -> list[str]:
@@ -78,11 +77,16 @@ def now() -> str:
 
 
 def one_line(text: object) -> str:
-    return re.sub(r"\s+", " ", str(text or "")).strip()[:MAX_LABEL_CHARS]
+    return re.sub(r"\s+", " ", str(text or "")).strip()[:MAX_TEXT_CHARS]
+
+
+def clips_dir() -> Path:
+    """STT_CLIPS_DIR, relative to the repo root (as server/src/clips.ts reads it); default stt/clips."""
+    return REPO / (os.environ.get("STT_CLIPS_DIR") or "stt/clips")
 
 
 class Clips:
-    """The voice-clip folder: each line's audio + clips.jsonl, and labels.jsonl with the fixed text."""
+    """Writes Moonshine's lines into the voice-clip folder: audio/<clip>.wav + a clips.jsonl row."""
 
     def __init__(self, folder: Path) -> None:
         self.folder = folder
@@ -103,21 +107,9 @@ class Clips:
             w.setframerate(CLIP_RATE)
             w.writeframes(pcm.tobytes())
         seconds = round(len(pcm) / CLIP_RATE, 2)
-        self.append("clips.jsonl", {"id": clip, "audio": f"audio/{clip}.wav", "heard": heard, "seconds": seconds, "model": model, "at": now()})
+        row = {"id": clip, "audio": f"audio/{clip}.wav", "heard": one_line(heard), "seconds": seconds, "source": "moonshine", "model": model}
+        self.append("clips.jsonl", {**row, "at": now()})
         return clip
-
-    def label(self, labels: object) -> int:
-        """Append the browser's labels ({clips, heard, text}); malformed ones are skipped. Returns how many were kept."""
-        kept = 0
-        for item in labels[:MAX_LABELS] if isinstance(labels, list) else []:
-            clips = item.get("clips") if isinstance(item, dict) else None
-            if not isinstance(clips, list) or not clips or not all(isinstance(c, str) and CLIP_ID.match(c) for c in clips):
-                continue
-            text = one_line(item.get("text"))
-            if text:
-                self.append("labels.jsonl", {"clips": clips, "heard": one_line(item.get("heard")), "text": text, "at": now()})
-                kept += 1
-        return kept
 
     def append(self, name: str, row: dict) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -227,10 +219,7 @@ async def session(engine: Engine, ws: ServerConnection) -> None:
                     wake.set()
                 continue
             m = json.loads(msg)
-            if m.get("type") == "label":
-                # Also on a connection of its own (the browser sends fixes whether or not the mic is on); takes nothing over.
-                await send([{"type": "labelled", "count": engine.clips.label(m.get("labels"))}])
-            elif m.get("type") == "start" and stream is None:
+            if m.get("type") == "start" and stream is None:
                 if engine.current is not None and engine.current is not ws:
                     await engine.current.close(1000, "Listening moved to another tab.")
                 engine.current = ws
@@ -266,7 +255,7 @@ async def session(engine: Engine, ws: ServerConnection) -> None:
 
 
 def same_origin(ws: ServerConnection, request: Request) -> Response | None:
-    """Refuse pages from other sites: WebSockets skip CORS, and this socket writes files (clips, labels)."""
+    """Refuse pages from other sites: WebSockets skip CORS, and this socket can record (voice clips)."""
     origin = request.headers.get("Origin")
     if origin and origin.split("://", 1)[-1] != request.headers.get("Host"):
         return ws.respond(403, "Origin not allowed\n")
@@ -278,8 +267,7 @@ async def main() -> None:
     if model not in ARCHS:
         sys.exit(f"STT_MODEL must be one of {', '.join(ARCHS)}")
     host, port = os.environ.get("STT_HOST", "127.0.0.1"), int(os.environ.get("STT_PORT", 8789))
-    clips_dir = Path(os.environ.get("STT_CLIPS_DIR") or Path(__file__).resolve().parent / "clips")
-    engine = Engine(model, clips_dir)
+    engine = Engine(model, clips_dir())
     async with serve(lambda ws: session(engine, ws), host, port, process_request=same_origin):
         print(f"speech-to-text ready on ws://{host}:{port} ({engine.name})", flush=True)
         await asyncio.get_running_loop().create_future()

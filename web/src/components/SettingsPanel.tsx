@@ -364,7 +364,7 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
 
         <JoinFields speech={settings.speech} setSpeech={setSpeech} />
 
-        {speech.provider === "moonshine" && (
+        {speech.provider !== "browser" && (
           <div className="field">
             <span className="field-label">Keep voice clips</span>
             <div className="segmented" role="radiogroup">
@@ -374,7 +374,9 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
                   on: true,
                   label: "Save on this computer",
                   title:
-                    "The speech server saves each spoken line's audio in stt/clips, to fine-tune Moonshine on your voice; fixing a line labels it",
+                    speech.provider === "moonshine"
+                      ? "The speech server saves each spoken line's audio in stt/clips, to fine-tune Moonshine on your voice; fixing a line labels it"
+                      : `The API server saves each spoken line's audio and ${speechName(speech.provider)}'s transcript in stt/clips, to fine-tune Moonshine on your voice; fixing a line labels it`,
                 },
               ].map((o) => (
                 <button
@@ -390,6 +392,12 @@ export function SettingsPanel({ settings, health, update, onClose }: Props) {
                 </button>
               ))}
             </div>
+            <span className="field-note">
+              <a href="/clips.html" target="_blank" rel="noreferrer">
+                Review saved clips
+              </a>
+              : listen, correct transcripts, delete.
+            </span>
           </div>
         )}
 

@@ -66,16 +66,37 @@ const dgResult = (text: string, flags: { is_final?: boolean; speech_final?: bool
 });
 
 describe("Deepgram lines", () => {
+  it("spans a line from its first word to its last, over every final piece", () => {
+    const l = new DeepgramLines();
+    const piece = (text: string, start: number, words: [number, number][], flags = {}) => ({
+      ...dgResult(text, { is_final: true, ...flags }),
+      start,
+      duration: 2,
+      channel: { alternatives: [{ transcript: text, words: words.map(([s, e]) => ({ word: "w", start: s, end: e })) }] },
+    });
+    l.take(
+      piece("draw a", 3, [
+        [3.4, 3.6],
+        [3.7, 3.8],
+      ]),
+      5,
+    );
+    const [fin] = l.take(piece("box", 5, [[5.1, 5.5]], { speech_final: true }), 7);
+    expect(fin).toMatchObject({ text: "draw a box", span: [3.4, 5.5] });
+  });
+
   it("joins final pieces into one line that ends at speech_final", () => {
     const l = new DeepgramLines();
     expect(l.take(dgResult("draw a"), 1)).toEqual([{ type: "partial", id: "1", text: "draw a" }]);
     expect(l.take(dgResult("draw a blue", { is_final: true }), 1)).toEqual([{ type: "partial", id: "1", text: "draw a blue" }]);
     expect(l.take(dgResult("box"), 1.2)).toEqual([{ type: "partial", id: "1", text: "draw a blue box" }]);
     expect(l.take(dgResult("box", { is_final: true, speech_final: true }), 1.3)).toEqual([
-      { type: "final", id: "1", text: "draw a blue box", ms: 300 },
+      { type: "final", id: "1", text: "draw a blue box", ms: 300, span: [0, 1] },
     ]);
     expect(l.take(dgResult("undo", { is_final: true }), 2)).toEqual([{ type: "partial", id: "2", text: "undo" }]);
-    expect(l.take({ type: "UtteranceEnd", last_word_end: 1.5 }, 2)).toEqual([{ type: "final", id: "2", text: "undo", ms: 500 }]);
+    expect(l.take({ type: "UtteranceEnd", last_word_end: 1.5 }, 2)).toEqual([
+      { type: "final", id: "2", text: "undo", ms: 500, span: [0, 1] },
+    ]);
     expect(l.take({ type: "UtteranceEnd" }, 3)).toEqual([]);
   });
 });
@@ -94,10 +115,12 @@ describe("AssemblyAI lines", () => {
     const l = new AssemblyLines();
     expect(l.take(turn(0, "draw a"), 1)).toEqual([{ type: "partial", id: "0", text: "draw a" }]);
     expect(l.take(turn(0, "draw a box", true), 1)).toEqual([{ type: "partial", id: "0", text: "draw a box" }]);
-    expect(l.take(turn(0, "Draw a box.", true, true), 1)).toEqual([{ type: "final", id: "0", text: "Draw a box.", ms: 700 }]);
+    expect(l.take(turn(0, "Draw a box.", true, true), 1)).toEqual([
+      { type: "final", id: "0", text: "Draw a box.", ms: 700, span: [0, 0.3] },
+    ]);
     expect(l.take(turn(0, "Draw a box.", true, true), 1)).toEqual([]);
     expect(l.take(turn(1, "undo"), 1)).toEqual([{ type: "partial", id: "1", text: "undo" }]);
-    expect(l.take({ type: "Termination" }, 1)).toEqual([{ type: "final", id: "1", text: "undo", ms: 900 }]);
+    expect(l.take({ type: "Termination" }, 1)).toEqual([{ type: "final", id: "1", text: "undo", ms: 900, span: [0, 0.1] }]);
   });
 });
 

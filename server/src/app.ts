@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CommandEvent, CommandRequest, HealthInfo, ModelConfig } from "@board/shared";
 import { DEFAULT_EFFORT, type ReasoningEffort } from "./effort";
 import type { Provider } from "./provider";
+import { clipRoutes, type ClipStore } from "./clips";
 import { attachStt, sttKeyed, type Connect, type SttSettings } from "./stt";
 
 /** Model settings from the browser; see ModelConfig. Empty strings mean "not set". */
@@ -41,14 +42,17 @@ export interface AppOptions {
   stt?: SttSettings;
   /** Opens the upstream speech socket (tests pass a fake). */
   sttConnect?: Connect;
+  /** The voice-clip folder: cloud speech lines are recorded into it, and /api/clips lists, labels and deletes clips. */
+  clips?: ClipStore;
 }
 
 export function buildApp(provider: Provider, opts: AppOptions = {}) {
   const app = Fastify({ logger: opts.logger === false ? false : { level: process.env.LOG_LEVEL || "info" } });
   if (opts.stt) {
-    const wss = attachStt(app.server, opts.stt, app.log, opts.sttConnect);
+    const wss = attachStt(app.server, opts.stt, app.log, opts.sttConnect, opts.clips);
     app.addHook("onClose", async () => wss.clients.forEach((c) => c.terminate()));
   }
+  if (opts.clips) clipRoutes(app, opts.clips);
 
   app.get("/api/health", async (): Promise<HealthInfo> => ({
     ok: true,

@@ -1,5 +1,6 @@
 """
-Voice clips: the sidecar's clip store (server.Clips) and build_manifest.
+Voice clips: the sidecar's clip writer (server.Clips) and build_manifest. Labels are written by the API server
+(server/src/clips.ts); here they are appended to labels.jsonl directly, in the same format.
 
 Needs the speech venv (server.py imports moonshine_voice; no model is loaded):
   F:/temp/moonshine-venv/Scripts/python -m unittest discover -s stt -p "test_*.py"
@@ -37,25 +38,13 @@ class ClipsTest(unittest.TestCase):
         clip = self.clips.save([0.0, 0.5, -0.5, 2.0] * 4000, "Draw a blue box", "moonshine:small")
         self.assertIsNotNone(clip)
         row = rows(self.dir / "clips.jsonl")[0]
-        self.assertEqual((row["id"], row["heard"], row["seconds"], row["model"]), (clip, "Draw a blue box", 1.0, "moonshine:small"))
+        self.assertEqual(
+            (row["id"], row["heard"], row["seconds"], row["source"], row["model"]), (clip, "Draw a blue box", 1.0, "moonshine", "moonshine:small")
+        )
         with wave.open(str(self.dir / row["audio"])) as w:
             self.assertEqual((w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()), (1, 2, 16000, 16000))
         self.assertIsNone(self.clips.save([], "nothing", "m"))
         self.assertNotEqual(self.clips.save([0.1] * 160, "two", "m"), clip)
-
-    def test_keeps_only_well_formed_labels(self) -> None:
-        kept = self.clips.label(
-            [
-                {"clips": ["a-001"], "heard": "set june", "text": "  set   zoom  "},
-                {"clips": ["../etc"], "text": "x"},  # not a clip id
-                {"clips": [], "text": "x"},
-                {"clips": ["a-002"], "text": " "},
-                "junk",
-            ]
-        )
-        self.assertEqual(kept, 1)
-        self.assertEqual([(r["clips"], r["heard"], r["text"]) for r in rows(self.dir / "labels.jsonl")], [(["a-001"], "set june", "set zoom")])
-        self.assertEqual(self.clips.label("not a list"), 0)
 
 
 class ManifestTest(unittest.TestCase):
@@ -69,7 +58,7 @@ class ManifestTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def label(self, clips: list[str], text: str) -> None:
-        Clips(self.dir).label([{"clips": clips, "text": text}])
+        Clips(self.dir).append("labels.jsonl", {"clips": clips, "text": text, "from": "activity"})
 
     def test_labelled_clips_with_joined_lines_and_last_label_winning(self) -> None:
         a, b, c, d, e = self.ids
@@ -97,6 +86,26 @@ class ManifestTest(unittest.TestCase):
         texts = sorted(r["text"] for r in train)
         self.assertEqual(len(texts), 4)  # one label + the three unfixed clips with their heard text
         self.assertTrue({"put it next to", "the database", "zoom in"} <= set(texts))
+
+    def test_sources_and_deleted_clips(self) -> None:
+        a, b, c, d, e = self.ids
+        clips = Clips(self.dir)
+        clips.session = "cloud"  # the API server's ids differ from the sidecar's
+        cloud = clips.save([0.1] * 8000, "Undo.", "deepgram:nova-3")
+        # A Deepgram row as the API server writes it, and an old Moonshine row with no source.
+        lines = (self.dir / "clips.jsonl").read_text(encoding="utf-8").splitlines()
+        lines[-1] = json.dumps({**json.loads(lines[-1]), "source": "deepgram"})
+        lines[0] = json.dumps({k: v for k, v in json.loads(lines[0]).items() if k != "source"})
+        (self.dir / "clips.jsonl").write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+        (self.dir / "audio" / f"{e}.wav").unlink()  # deleted in the dashboard
+        train, _ = build_manifest.build(self.dir, heard=True, eval_frac=0, seed=0)
+        self.assertEqual({r["id"]: r["source"] for r in train}, {a: "moonshine", b: "moonshine", c: "moonshine", d: "moonshine", cloud: "deepgram"})
+        train, _ = build_manifest.build(self.dir, heard=True, eval_frac=0, seed=0, sources={"deepgram"})
+        self.assertEqual([(r["id"], r["text"]) for r in train], [(cloud, "Undo.")])
+        # Corrections from every source, unfixed clips only from the cloud.
+        self.label([a], "set zoom")
+        train, _ = build_manifest.build(self.dir, heard=False, eval_frac=0, seed=0, heard_sources={"deepgram"})
+        self.assertEqual(sorted((r["id"], r["text"]) for r in train), sorted([(a, "set zoom"), (cloud, "Undo.")]))
 
     def test_manifest_loads_in_moonshine_format(self) -> None:
         self.label([self.ids[0]], "set zoom")

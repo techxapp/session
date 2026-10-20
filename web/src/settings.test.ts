@@ -94,9 +94,11 @@ describe("settings -> speech config", () => {
     });
   });
 
-  it("keeps voice clips only when asked, and only for Moonshine", () => {
+  it("keeps voice clips only when asked, and not for the browser's own recognition", () => {
     expect(speechConfig(with_({ speech: { keys: {}, provider: "moonshine" } }), health).keepClips).toBe(false);
     expect(speechConfig(with_({ speech: { keys: {}, provider: "moonshine", keepClips: true } }), health).keepClips).toBe(true);
-    expect(speechConfig(with_({ speech: { keys: {}, provider: "deepgram", keepClips: true } }), health).keepClips).toBe(false);
+    expect(speechConfig(with_({ speech: { keys: {}, provider: "deepgram", keepClips: true } }), health).keepClips).toBe(true);
+    expect(speechConfig(with_({ speech: { keys: {}, provider: "assemblyai", keepClips: true } }), health).keepClips).toBe(true);
+    expect(speechConfig(with_({ speech: { keys: {}, provider: "browser", keepClips: true } }), health).keepClips).toBe(false);
   });
 });

@@ -1,9 +1,9 @@
-import { sttUrl } from "./useVoice";
-
 /**
- * Voice clips for fine-tuning Moonshine on the user's voice. With Settings "Keep voice clips" on, the sidecar saves
- * each spoken line's audio and names the clip in its final message; when the line is fixed in the activity panel,
- * the fixed text goes back as a label (stt/server.py, labels.jsonl; stt/build_manifest.py makes the training set).
+ * Voice clips for fine-tuning Moonshine on the user's voice. With Settings "Keep voice clips" on, the speech server
+ * (Moonshine: stt/server.py; Deepgram/AssemblyAI: the API server's relay) saves each spoken line's audio and names
+ * the clip in its final message; when the line is fixed in the activity panel, the fixed text goes to the API server
+ * as a label (POST /api/clips/labels -> labels.jsonl; server/src/clips.ts). The clips dashboard (/clips.html) reviews
+ * them all, and stt/build_manifest.py makes the training set.
  */
 
 /** A command as it was spoken: what the recogniser heard and the clips it was saved in (several if lines were joined). */
@@ -19,7 +19,7 @@ export interface ClipLabel extends SpokenLine {
 
 const QUEUE_KEY = "voice-board:clip-labels:v1";
 const MAX_QUEUED = 200;
-const TIMEOUT_MS = 3000;
+const TIMEOUT_MS = 5000;
 
 function loadQueue(): ClipLabel[] {
   try {
@@ -42,8 +42,8 @@ function saveQueue(queue: ClipLabel[]) {
 let pending: Promise<boolean> | null = null;
 
 /**
- * Queue a label (if given) and send every queued one to the sidecar on a connection of its own. Labels that can't
- * be sent (sidecar not running) stay queued in localStorage for the next call. Resolves true once they're stored.
+ * Queue a label (if given) and send every queued one to the API server. Labels that can't be sent (server down)
+ * stay queued in localStorage for the next call. Resolves true once they're stored.
  */
 export function sendClipLabels(label?: ClipLabel): Promise<boolean> {
   if (label) saveQueue([...loadQueue(), label]);
@@ -55,24 +55,18 @@ export function sendClipLabels(label?: ClipLabel): Promise<boolean> {
 async function flush(): Promise<boolean> {
   const labels = loadQueue();
   if (!labels.length) return true;
-  const ok = await new Promise<boolean>((resolve) => {
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(sttUrl(false));
-    } catch {
-      return resolve(false);
-    }
-    const done = (result: boolean) => {
-      clearTimeout(timer);
-      ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
-      if (ws.readyState <= WebSocket.OPEN) ws.close();
-      resolve(result);
-    };
-    const timer = setTimeout(() => done(false), TIMEOUT_MS);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "label", labels }));
-    ws.onmessage = (e) => done(JSON.parse(String(e.data))?.type === "labelled");
-    ws.onerror = ws.onclose = () => done(false);
-  });
+  let ok = false;
+  try {
+    const res = await fetch("/api/clips/labels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ labels, from: "activity" }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    ok = res.ok;
+  } catch {
+    /* server unreachable: keep them queued */
+  }
   // Keep what was queued while this batch was in flight.
   if (ok) saveQueue(loadQueue().slice(labels.length));
   return ok;

@@ -201,7 +201,7 @@ interface Session {
 }
 
 /** Moonshine runs in its own sidecar; Deepgram and AssemblyAI are relayed by the API server (it holds the .env keys). */
-export function sttUrl(cloud: boolean) {
+function sttUrl(cloud: boolean) {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${cloud ? "/api/stt" : "/stt"}`;
 }
 
@@ -246,7 +246,7 @@ function closeMic(s: Session) {
 /**
  * Streams the mic to the speech provider `getSpeech` picks (read on each start). `onFinal` gets each completed
  * spoken command (a line that ends mid-command, e.g. on "and", is joined with the next; see LineJoiner) and the
- * voice clips the sidecar saved for it (Settings "Keep voice clips", Moonshine only);
+ * voice clips the speech server saved for it (Settings "Keep voice clips"; not for browser recognition);
  * `getKeyterms` is read when a new line starts, so recognition follows the labels on the board.
  * After `idleMs` with nothing heard the session dozes: the speech socket (or browser recognition) closes, the mic
  * stays open, and the first speech-loud audio reconnects, sending the last 2 s first so those words still count.
@@ -324,8 +324,8 @@ export function useVoice(onFinal: (text: string, clips: string[]) => void, getKe
       const terms = cb.current.getKeyterms();
       s.terms = terms.join("\n");
       s.line = undefined;
-      const which = cloud ? { provider: s.speech.provider, apiKey: s.speech.apiKey, turn: s.speech.turn } : { record: s.speech.keepClips };
-      ws.send(JSON.stringify({ type: "start", sampleRate: s.ctx.sampleRate, keyterms: terms, ...which }));
+      const which = cloud ? { provider: s.speech.provider, apiKey: s.speech.apiKey, turn: s.speech.turn } : {};
+      ws.send(JSON.stringify({ type: "start", sampleRate: s.ctx.sampleRate, keyterms: terms, record: s.speech.keepClips, ...which }));
       early.forEach((frame) => ws.send(frame));
       s.frame = (f) => ws.readyState === WebSocket.OPEN && ws.send(f);
       ws.onmessage = (e) => onMessage(s, JSON.parse(e.data) as SttMessage);
