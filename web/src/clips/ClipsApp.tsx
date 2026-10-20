@@ -462,11 +462,53 @@ export default function ClipsApp() {
               </tr>
             </tbody>
           </table>
+        </details>
+        <details className="guide">
+          <summary>Training Moonshine on them</summary>
           <p>
-            Then train with{" "}
-            <code>python -m moonshine_voice.lora --train-manifest stt/clips/train.jsonl --eval-manifest stt/clips/eval.jsonl</code> (needs{" "}
-            <code>moonshine-voice[finetune]</code>; the full command is in the script's docstring).
+            Training runs in its own venv with <code>moonshine-voice[finetune]</code> and CUDA torch (on this machine:{" "}
+            <code>F:/temp/moonshine-ft-venv</code>), not the speech sidecar's. Run these from the repo root with that venv's Python.
           </p>
+          <ol>
+            <li>
+              Set up the venv (once):
+              <pre>
+                {`uv venv --python "C:/Program Files/Python310/python.exe" F:/temp/moonshine-ft-venv
+uv pip install --python F:/temp/moonshine-ft-venv/Scripts/python.exe torch --index-url https://download.pytorch.org/whl/cu130
+uv pip install --python F:/temp/moonshine-ft-venv/Scripts/python.exe "moonshine-voice[finetune]==0.1.5"`}
+              </pre>
+            </li>
+            <li>
+              Build <code>train.jsonl</code>/<code>eval.jsonl</code> with <code>stt/build_manifest.py</code> as above.
+            </li>
+            <li>
+              Train a LoRA adapter on the decoder (the default). It mixes in general English speech (downloaded on first use) so the model
+              doesn't forget other words; <code>--eval</code> scores your held-out clips, <code>--canary</code> scores LibriSpeech, so a
+              loss on ordinary speech shows up. Add <code>--prepare-only</code> first to just count the data.
+              <pre>
+                {`python -m moonshine_voice.lora --train-manifest stt/clips/train.jsonl --eval-manifest stt/clips/eval.jsonl --model moonshine-ai/moonshine-streaming-small --eval --canary -o F:/temp/moonshine-lora`}
+              </pre>
+              The model must be the size the sidecar runs (<code>STT_MODEL</code>, small by default). A few minutes of clips won't change
+              much; keep labelling.
+            </li>
+            <li>
+              Export the result (<code>F:/temp/moonshine-lora/adapted</code>) to the runtime's graphs. A decoder adapter only changes{" "}
+              <code>decoder_kv</code> and <code>cross_kv</code>; copy the other <code>.ort</code> files and{" "}
+              <code>streaming_config.json</code> from the downloaded model folder (<code>MOONSHINE_VOICE_CACHE</code>, here{" "}
+              <code>F:/temp/moonshine-models/download.moonshine.ai/model/small-streaming-en/quantized_26_08_21</code>).
+              <pre>
+                {`python -m moonshine_voice.lora --export --model F:/temp/moonshine-lora/adapted --output-dir F:/temp/moonshine-export --graphs decoder_kv,cross_kv --tokenizer-bin F:/temp/moonshine-models/download.moonshine.ai/model/small-streaming-en/quantized_26_08_21/tokenizer.bin`}
+              </pre>
+            </li>
+            <li>
+              Quantize each <code>.onnx</code> to <code>.ort</code> with <code>quantize-streaming-model.sh</code> from the{" "}
+              <code>moonshine-ai/moonshine</code> repo (not tried here yet).
+            </li>
+            <li>
+              Start the speech sidecar with <code>STT_MODEL_DIR</code> set to that folder; its name shows in the sidecar's startup line.
+              Unset it to go back to the stock model.
+            </li>
+          </ol>
         </details>
       </footer>
     </div>

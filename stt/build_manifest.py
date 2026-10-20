@@ -21,11 +21,12 @@ the eval shows how often fixed mistakes come right).
 
 Stdlib only:  python stt/build_manifest.py [--dir DIR] [--heard] [--heard-source S,S] [--source S,S] [--eval-frac 0.2] [--seed 0]
 
-Then, in a venv with `moonshine-voice[finetune]` (needs torch; not set up on this machine yet):
+Then, in a venv with `moonshine-voice[finetune]` (needs torch; on this machine F:/temp/moonshine-ft-venv):
   python -m moonshine_voice.lora --train-manifest stt/clips/train.jsonl --eval-manifest stt/clips/eval.jsonl \\
       --model moonshine-ai/moonshine-streaming-small --eval --canary --output-dir F:/temp/moonshine-lora
 It mixes in general English (yodas-en-replay) by default so the model doesn't forget other speech, and --canary
-scores LibriSpeech to show any loss. `--export` turns the result into the runtime's ONNX graphs.
+scores LibriSpeech to show any loss. `--export` turns the result (<output-dir>/adapted) into the runtime's ONNX graphs; quantize them to .ort and point
+the speech sidecar's STT_MODEL_DIR at the folder. The clips dashboard (/clips.html) lists the steps.
 """
 
 from __future__ import annotations

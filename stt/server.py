@@ -24,6 +24,9 @@ Setup (this machine): its own venv, since Moonshine needs no torch (it runs on C
   uv pip install --python F:/temp/moonshine-venv/Scripts/python.exe -r stt/requirements.txt
   F:/temp/moonshine-venv/Scripts/python stt/server.py
 Env: STT_MODEL (small | medium; streaming English, default small), STT_PORT (8789), STT_HOST (127.0.0.1),
+     STT_MODEL_DIR (a fine-tuned model instead of the download: a folder holding the runtime's .ort graphs,
+     streaming_config.json and tokenizer.bin, as `moonshine_voice.lora --export` + quantizing make them; STT_MODEL
+     must name the size it was trained from),
      STT_CLIPS_DIR (voice clips; default stt/clips, gitignored; a relative path is from the repo root, as the API
      server reads it),
      MOONSHINE_VOICE_CACHE (Moonshine's model cache; the model downloads there on first start),
@@ -152,11 +155,14 @@ class Lines(TranscriptEventListener):
 class Engine:
     """One loaded model shared by the sessions; native calls run one at a time on a worker thread."""
 
-    def __init__(self, model: str, clips_dir: Path) -> None:
+    def __init__(self, model: str, clips_dir: Path, model_dir: Path | None = None) -> None:
         t = time.perf_counter()
-        path, arch = get_model_for_language("en", ARCHS[model])
+        if model_dir:
+            path, arch = str(model_dir), ARCHS[model]
+        else:
+            path, arch = get_model_for_language("en", ARCHS[model])
         self.transcriber = Transcriber(path, arch)
-        self.name = f"moonshine:{model}"
+        self.name = f"moonshine:{model}" + (f" ({model_dir.name})" if model_dir else "")
         self.lock = asyncio.Lock()
         self.terms: list[str] | None = None
         self.current: ServerConnection | None = None
@@ -267,7 +273,10 @@ async def main() -> None:
     if model not in ARCHS:
         sys.exit(f"STT_MODEL must be one of {', '.join(ARCHS)}")
     host, port = os.environ.get("STT_HOST", "127.0.0.1"), int(os.environ.get("STT_PORT", 8789))
-    engine = Engine(model, clips_dir())
+    model_dir = Path(os.environ["STT_MODEL_DIR"]) if os.environ.get("STT_MODEL_DIR") else None
+    if model_dir and not (model_dir / "tokenizer.bin").is_file():
+        sys.exit(f"STT_MODEL_DIR {model_dir} has no tokenizer.bin: export and quantize the model into it first")
+    engine = Engine(model, clips_dir(), model_dir)
     async with serve(lambda ws: session(engine, ws), host, port, process_request=same_origin):
         print(f"speech-to-text ready on ws://{host}:{port} ({engine.name})", flush=True)
         await asyncio.get_running_loop().create_future()
